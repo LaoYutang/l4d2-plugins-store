@@ -29,8 +29,10 @@ public Plugin myinfo =
 
 // 排行榜最大显示行数 (不含标题)
 #define RANKING_MAX_ROWS 15
-#define RANKING_HUD_Y        0.085
-#define RANKING_ROW_HEIGHT   0.021
+#define RANKING_HUD_Y             0.085
+#define RANKING_TEXT_ROW_HEIGHT   0.021
+#define RANKING_SLOT_ROW_HEIGHT   0.030
+#define RANKING_HUD_PADDING       0.012
 
 // 击杀列表相关
 #define KILL_HUD_BASE    9    // 击杀列表起始槽位 (HUD_MID_BOX)
@@ -720,8 +722,9 @@ void ShowRankingHUD()
     AlignColumnRight(sCol[c], totalRows, maxStrLen);
 
   // 合并各列为换行分隔的字符串并显示
-  float fPosY   = RANKING_HUD_Y;
-  float fHeight = RANKING_ROW_HEIGHT * totalRows;
+  float fTextHeight = RANKING_TEXT_ROW_HEIGHT * totalRows;
+  float fHeight     = RANKING_SLOT_ROW_HEIGHT * totalRows + RANKING_HUD_PADDING;
+  float fPosY       = RANKING_HUD_Y - (fHeight - fTextHeight) / 2.0;
 
   // 显示前3列(特感、丧尸、友伤)
   for (int c = 0; c < 3; c++)
