@@ -4,18 +4,20 @@
 #include <sourcemod>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.1"
 #define TEAM_SURVIVOR 2
 
 ConVar g_cvEnable;
 ConVar g_cvRatio;
 ConVar g_cvMaxHealth;
 ConVar g_cvNotify;
+ConVar g_cvAllowIncapVictim;
 
 bool  g_bEnable;
 float g_fRatio;
 int   g_iMaxHealth;
 bool  g_bNotify;
+bool  g_bAllowIncapVictim;
 
 public Plugin myinfo =
 {
@@ -43,11 +45,13 @@ public void OnPluginStart()
 	g_cvRatio     = CreateConVar("l4d2_ff_lifesteal_ratio", "1.0", "攻击者回血比例，回血量=友伤伤害*比例 (1.0=100%).", FCVAR_NOTIFY, true, 0.0, true, 10.0);
 	g_cvMaxHealth = CreateConVar("l4d2_ff_lifesteal_max_health", "100", "攻击者回血后的实血上限.", FCVAR_NOTIFY, true, 1.0, true, 1000.0);
 	g_cvNotify    = CreateConVar("l4d2_ff_lifesteal_notify", "1", "触发友伤汲血时是否提示攻击者 (0=关闭, 1=开启).", FCVAR_NOTIFY, true, 0.0, true, 1.0);
+	g_cvAllowIncapVictim = CreateConVar("l4d2_ff_lifesteal_allow_incap_victim", "0", "是否允许从倒地或挂边队友身上触发友伤汲血 (0=关闭, 1=开启).", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 
 	g_cvEnable.AddChangeHook(ConVarChanged);
 	g_cvRatio.AddChangeHook(ConVarChanged);
 	g_cvMaxHealth.AddChangeHook(ConVarChanged);
 	g_cvNotify.AddChangeHook(ConVarChanged);
+	g_cvAllowIncapVictim.AddChangeHook(ConVarChanged);
 
 	GetCvars();
 	AutoExecConfig(true, "l4d2_ff_lifesteal");
@@ -75,6 +79,7 @@ void GetCvars()
 	g_fRatio     = g_cvRatio.FloatValue;
 	g_iMaxHealth = g_cvMaxHealth.IntValue;
 	g_bNotify    = g_cvNotify.BoolValue;
+	g_bAllowIncapVictim = g_cvAllowIncapVictim.BoolValue;
 }
 
 public void OnClientPutInServer(int client)
@@ -98,7 +103,10 @@ public Action OnTakeDamage(int victim, int &attacker, int &inflictor, float &dam
 	if (victim == attacker)
 		return Plugin_Continue;
 
-	if (!IsStandingSurvivor(victim) || !IsStandingSurvivor(attacker))
+	if (!IsStandingSurvivor(attacker))
+		return Plugin_Continue;
+
+	if (!IsAllowedVictimState(victim))
 		return Plugin_Continue;
 
 	int healAmount = RoundToNearest(damage * g_fRatio);
@@ -146,11 +154,30 @@ bool IsStandingSurvivor(int client)
 	if (!IsPlayerAlive(client))
 		return false;
 
-	if (GetEntProp(client, Prop_Send, "m_isIncapacitated") != 0)
-		return false;
-
-	if (GetEntProp(client, Prop_Send, "m_isHangingFromLedge") != 0)
+	if (IsSurvivorIncapacitatedOrHanging(client))
 		return false;
 
 	return true;
+}
+
+bool IsAllowedVictimState(int client)
+{
+	if (!IsPlayerAlive(client))
+		return false;
+
+	if (g_bAllowIncapVictim)
+		return true;
+
+	return !IsSurvivorIncapacitatedOrHanging(client);
+}
+
+bool IsSurvivorIncapacitatedOrHanging(int client)
+{
+	if (GetEntProp(client, Prop_Send, "m_isIncapacitated") != 0)
+		return true;
+
+	if (GetEntProp(client, Prop_Send, "m_isHangingFromLedge") != 0)
+		return true;
+
+	return false;
 }
