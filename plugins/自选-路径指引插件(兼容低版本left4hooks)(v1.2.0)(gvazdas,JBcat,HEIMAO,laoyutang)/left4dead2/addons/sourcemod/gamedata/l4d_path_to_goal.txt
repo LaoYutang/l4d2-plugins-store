@@ -1,0 +1,15 @@
+"Games"
+{
+	"left4dead2"
+	{
+		"Signatures"
+		{
+			"CNavArea::IsBlocked"
+			{
+				"library"	"server"
+				"linux"		"@_ZNK8CNavArea9IsBlockedEib"
+				"windows"	"\x55\x8B\x2A\x80\x2A\x2A\x2A\x74\x2A\x8B\x2A\x2A\x85\x2A\x79"
+			}
+		}
+	}
+}
