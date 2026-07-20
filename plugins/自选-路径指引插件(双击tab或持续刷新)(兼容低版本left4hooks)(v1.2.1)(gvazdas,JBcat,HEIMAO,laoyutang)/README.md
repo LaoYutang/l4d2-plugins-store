@@ -1,6 +1,6 @@
 ## 简介
 
-基于导航网格逃生路线的路径指引插件。玩家可通过指令显示通往目标方向的光束路径，也支持长按 TAB 触发提示和持续刷新模式。
+基于导航网格逃生路线的路径指引插件。玩家可通过指令显示通往目标方向的光束路径，支持双击 TAB 触发提示和持续刷新模式。
 
 该版本为兼容低版本 Left4Hooks/Left4DHooks 的版本，内置 `CNavArea::IsBlocked` SDKCall，不依赖新版 `L4D_NavArea_IsBlocked` native。
 

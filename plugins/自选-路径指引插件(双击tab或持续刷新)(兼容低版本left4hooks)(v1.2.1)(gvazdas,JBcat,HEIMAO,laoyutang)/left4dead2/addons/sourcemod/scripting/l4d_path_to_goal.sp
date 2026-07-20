@@ -14,9 +14,10 @@
 #define DEATH_OFFSET       48.0
 #define WATERLEVEL_SHALLOW 1
 #define WATERLEVEL_WAIST   2
+#define DOUBLE_TAB_INTERVAL 0.3
 
 #define PLUGIN_NAME        "l4d_path_to_goal"
-#define PLUGIN_VERSION     "1.2.0"
+#define PLUGIN_VERSION     "1.2.1"
 #define PLUGIN_AUTHOR      "gvazdas,JBcat,HEIMAO,laoyutang"
 #define PLUGIN_DESCRIPTION "基于导航网格的自动路径指引指示器（持续刷新版）"
 #define PLUGIN_LINK        "https://github.com/gvazdas/l4d2_zombie_master"
@@ -714,20 +715,17 @@ public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float
   bool nowTab = (buttons & IN_SCORE) != 0;
   if (nowTab && !g_bLastTabState[client])
   {
-    g_fLastTabTime[client] = GetGameTime();
-  }
-  else if (nowTab && g_bLastTabState[client] && g_fLastTabTime[client] > 0.0 && !IsCooldown(client))
-  {
-    float currentTime = GetGameTime();
-    if (currentTime - g_fLastTabTime[client] >= 1.0)
+    float currentTime = GetEngineTime();
+    float interval    = currentTime - g_fLastTabTime[client];
+    if (g_fLastTabTime[client] > 0.0 && interval >= 0.0 && interval <= DOUBLE_TAB_INTERVAL)
     {
-      RequestGuide(client, 5.0, false, true);
       g_fLastTabTime[client] = 0.0;
+      RequestGuide(client, 5.0, false, true);
     }
-  }
-  else if (!nowTab && g_bLastTabState[client])
-  {
-    g_fLastTabTime[client] = 0.0;
+    else
+    {
+      g_fLastTabTime[client] = currentTime;
+    }
   }
   g_bLastTabState[client] = nowTab;
 }
