@@ -1,6 +1,11 @@
 /*
- * Special Spawner Vote v1.0.0
+ * Special Spawner Vote
  *
+ * v1.1.0
+ * - 数量投票改为base/increase缩放参数，支持一次提交两个数字。
+ * - 移除max/group/wave投票目标。
+ *
+ * v1.0.0
  * 为 Special Spawner 的 timer 和 limit 管理命令提供原生投票入口。
  * 投票通过后由服务器控制台执行原命令，不直接修改 Special Spawner 的 ConVar。
  */
@@ -30,6 +35,16 @@ enum PendingVoteType
   PendingVote_Limit
 }
 
+enum PendingLimitAction
+{
+  PendingLimit_None,
+  PendingLimit_Reset,
+  PendingLimit_Class,
+  PendingLimit_Base,
+  PendingLimit_Increase,
+  PendingLimit_Scale
+}
+
 static const char
   g_sZombieClass[SI_MAX_SIZE][] = {
     "smoker",
@@ -40,26 +55,29 @@ static const char
     "charger"
   };
 
-PendingVoteType g_ePendingVoteType;
+PendingVoteType    g_ePendingVoteType;
 
-char g_sPendingLimitTarget[16];
+PendingLimitAction g_ePendingLimitAction;
 
-int g_iPendingLimit;
+char               g_sPendingLimitTarget[16];
+
+int
+  g_iPendingLimit,
+  g_iPendingBaseLimit;
 
 float
+  g_fPendingIncrease,
   g_fPendingTimerMin,
   g_fPendingTimerMax;
 
-bool
-  g_bPendingLimitReset,
-  g_bPendingTimerRange;
+bool g_bPendingTimerRange;
 
 public Plugin myinfo =
 {
   name        = "Special Spawner Vote",
   author      = "laoyutang",
   description = "Adds native votes for the Special Spawner timer and limit commands",
-  version     = "1.0.0",
+  version     = "1.1.0",
 };
 
 public void OnPluginStart()
@@ -79,15 +97,17 @@ Action cmdVoteLimit(int client, int args)
     return Plugin_Handled;
   }
 
-  char target[16];
-  int limit;
-  bool reset;
-  switch (ParseLimitArguments(args, target, sizeof target, limit, reset))
+  PendingLimitAction action;
+  char               target[16];
+  int                limit;
+  int                baseLimit;
+  float              increase;
+  switch (ParseLimitArguments(args, action, target, sizeof target, limit, baseLimit, increase))
   {
     case ParseResult_Valid:
-      StartLimitVote(client, target, limit, reset);
+      StartLimitVote(client, action, target, limit, baseLimit, increase);
     case ParseResult_InvalidValue:
-      ReplyToCommand(client, "[SS投票] Limit value must be >= 0");
+      ReplyToCommand(client, "[SS投票] 参数无效：base需为1-32整数，increase需为0.0-32.0，各职业上限需为0-32整数。");
     case ParseResult_InvalidSyntax, ParseResult_UnknownTarget:
       ShowLimitVoteUsage(client);
   }
@@ -108,7 +128,7 @@ Action cmdVoteTimer(int client, int args)
 
   float min;
   float max;
-  bool range;
+  bool  range;
   switch (ParseTimerArguments(args, min, max, range))
   {
     case ParseResult_Valid:
@@ -139,11 +159,13 @@ bool IsValidVoteInitiator(int client)
   return true;
 }
 
-ArgumentParseResult ParseLimitArguments(int args, char[] target, int targetLength, int &limit, bool &reset)
+ArgumentParseResult ParseLimitArguments(int args, PendingLimitAction &action, char[] target, int targetLength, int &limit, int &baseLimit, float &increase)
 {
+  action    = PendingLimit_None;
   target[0] = '\0';
   limit     = 0;
-  reset     = false;
+  baseLimit = 0;
+  increase  = 0.0;
 
   char arg[16];
   if (args == 1)
@@ -151,8 +173,7 @@ ArgumentParseResult ParseLimitArguments(int args, char[] target, int targetLengt
     GetCmdArg(1, arg, sizeof arg);
     if (strcmp(arg, "reset", false) == 0)
     {
-      strcopy(target, targetLength, "reset");
-      reset = true;
+      action = PendingLimit_Reset;
       return ParseResult_Valid;
     }
 
@@ -162,19 +183,36 @@ ArgumentParseResult ParseLimitArguments(int args, char[] target, int targetLengt
   if (args != 2)
     return ParseResult_InvalidSyntax;
 
-  limit = GetCmdArgInt(2);
-  if (limit < 0)
-    return ParseResult_InvalidValue;
-
   GetCmdArg(1, arg, sizeof arg);
+  if (strcmp(arg, "base", false) == 0)
+  {
+    if (!GetCmdArgIntEx(2, baseLimit) || baseLimit < 1 || baseLimit > 32)
+      return ParseResult_InvalidValue;
+
+    action = PendingLimit_Base;
+    return ParseResult_Valid;
+  }
+
+  if (strcmp(arg, "increase", false) == 0)
+  {
+    if (!GetCmdArgFloatEx(2, increase) || increase < 0.0 || increase > 32.0)
+      return ParseResult_InvalidValue;
+
+    action = PendingLimit_Increase;
+    return ParseResult_Valid;
+  }
+
+  if (GetCmdArgIntEx(1, baseLimit))
+  {
+    if (baseLimit < 1 || baseLimit > 32 || !GetCmdArgFloatEx(2, increase) || increase < 0.0 || increase > 32.0)
+      return ParseResult_InvalidValue;
+
+    action = PendingLimit_Scale;
+    return ParseResult_Valid;
+  }
+
   if (strcmp(arg, "all", false) == 0)
     strcopy(target, targetLength, "all");
-  else if (strcmp(arg, "max", false) == 0)
-    strcopy(target, targetLength, "max");
-  else if (strcmp(arg, "group", false) == 0)
-    strcopy(target, targetLength, "group");
-  else if (strcmp(arg, "wave", false) == 0)
-    strcopy(target, targetLength, "wave");
   else
   {
     for (int i; i < SI_MAX_SIZE; i++)
@@ -187,7 +225,14 @@ ArgumentParseResult ParseLimitArguments(int args, char[] target, int targetLengt
     }
   }
 
-  return target[0] == '\0' ? ParseResult_UnknownTarget : ParseResult_Valid;
+  if (target[0] == '\0')
+    return ParseResult_UnknownTarget;
+
+  if (!GetCmdArgIntEx(2, limit) || limit < 0 || limit > 32)
+    return ParseResult_InvalidValue;
+
+  action = PendingLimit_Class;
+  return ParseResult_Valid;
 }
 
 ArgumentParseResult ParseTimerArguments(int args, float &min, float &max, bool &range)
@@ -218,9 +263,10 @@ ArgumentParseResult ParseTimerArguments(int args, float &min, float &max, bool &
 void ShowLimitVoteUsage(int client)
 {
   ReplyToCommand(client, "\x04!limitvote/sm_limitvote \x05reset");
-  ReplyToCommand(client, "\x04!limitvote/sm_limitvote \x05<class> <limit>");
-  ReplyToCommand(client, "\x05<class> \x01[ all | max | group/wave | smoker | boomer | hunter | spitter | jockey | charger ]");
-  ReplyToCommand(client, "\x05<limit> \x01[ >= 0 ]");
+  ReplyToCommand(client, "\x04!limitvote/sm_limitvote \x05<base> <increase>");
+  ReplyToCommand(client, "\x04!limitvote/sm_limitvote \x05base <1-32> | increase <0.0-32.0>");
+  ReplyToCommand(client, "\x04!limitvote/sm_limitvote \x05<class> <0-32>");
+  ReplyToCommand(client, "\x05<class> \x01[ all | smoker | boomer | hunter | spitter | jockey | charger ]");
 }
 
 void ShowTimerVoteUsage(int client)
@@ -228,25 +274,29 @@ void ShowTimerVoteUsage(int client)
   ReplyToCommand(client, "[SS投票] timervote <constant> || timervote <min> <max>");
 }
 
-void StartLimitVote(int client, const char[] target, int limit, bool reset)
+void StartLimitVote(int client, PendingLimitAction action, const char[] target, int limit, int baseLimit, float increase)
 {
   if (!CanStartNativeVote(client))
     return;
 
-  g_ePendingVoteType  = PendingVote_Limit;
-  g_iPendingLimit     = limit;
-  g_bPendingLimitReset = reset;
+  g_ePendingVoteType    = PendingVote_Limit;
+  g_ePendingLimitAction = action;
+  g_iPendingLimit       = limit;
+  g_iPendingBaseLimit   = baseLimit;
+  g_fPendingIncrease    = increase;
   strcopy(g_sPendingLimitTarget, sizeof g_sPendingLimitTarget, target);
 
   char title[128];
-  if (reset)
+  if (action == PendingLimit_Reset)
     Format(title, sizeof title, "发起投票: 重置各类特感数量上限?");
+  else if (action == PendingLimit_Base)
+    Format(title, sizeof title, "投票: 基础特感数设为 %d?", baseLimit);
+  else if (action == PendingLimit_Increase)
+    Format(title, sizeof title, "投票: 每增加1名玩家, 特感增量 %.2f?", increase);
+  else if (action == PendingLimit_Scale)
+    Format(title, sizeof title, "投票: 基础%d特, 每多1人+%.2f特?", baseLimit, increase);
   else if (strcmp(target, "all") == 0)
     Format(title, sizeof title, "发起投票: 所有特感职业上限设为 %d?", limit);
-  else if (strcmp(target, "max") == 0)
-    Format(title, sizeof title, "发起投票: 特感总数上限设为 %d?", limit);
-  else if (strcmp(target, "group") == 0 || strcmp(target, "wave") == 0)
-    Format(title, sizeof title, "发起投票: 每波特感数量设为 %d?", limit);
   else
     Format(title, sizeof title, "发起投票: %s 上限设为 %d?", target, limit);
 
@@ -352,10 +402,19 @@ void ExecutePendingCommand()
   }
   else if (g_ePendingVoteType == PendingVote_Limit)
   {
-    if (g_bPendingLimitReset)
-      ServerCommand("sm_limit reset");
-    else
-      ServerCommand("sm_limit %s %d", g_sPendingLimitTarget, g_iPendingLimit);
+    switch (g_ePendingLimitAction)
+    {
+      case PendingLimit_Reset:
+        ServerCommand("sm_limit reset");
+      case PendingLimit_Class:
+        ServerCommand("sm_limit %s %d", g_sPendingLimitTarget, g_iPendingLimit);
+      case PendingLimit_Base:
+        ServerCommand("sm_limit base %d", g_iPendingBaseLimit);
+      case PendingLimit_Increase:
+        ServerCommand("sm_limit increase %f", g_fPendingIncrease);
+      case PendingLimit_Scale:
+        ServerCommand("sm_limit %d %f", g_iPendingBaseLimit, g_fPendingIncrease);
+    }
   }
 
   ServerExecute();
@@ -363,11 +422,13 @@ void ExecutePendingCommand()
 
 void ResetPendingVote()
 {
-  g_ePendingVoteType        = PendingVote_None;
-  g_sPendingLimitTarget[0]  = '\0';
-  g_iPendingLimit           = 0;
-  g_fPendingTimerMin        = 0.0;
-  g_fPendingTimerMax        = 0.0;
-  g_bPendingLimitReset      = false;
-  g_bPendingTimerRange      = false;
+  g_ePendingVoteType       = PendingVote_None;
+  g_ePendingLimitAction    = PendingLimit_None;
+  g_sPendingLimitTarget[0] = '\0';
+  g_iPendingLimit          = 0;
+  g_iPendingBaseLimit      = 0;
+  g_fPendingIncrease       = 0.0;
+  g_fPendingTimerMin       = 0.0;
+  g_fPendingTimerMax       = 0.0;
+  g_bPendingTimerRange     = false;
 }

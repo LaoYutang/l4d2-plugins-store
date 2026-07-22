@@ -1,7 +1,11 @@
 /*
- * Special Spawner v2.0.0
+ * Special Spawner v2.1.0
  *
- * 版本修改内容：
+ * v2.1.0
+ * - 新增可配置的基准人数，特感总上限由基准人数、基础上限和每人增量直接计算。
+ * - 移除总上限中间 ConVar 和每波数量参数，每个刷新周期按总上限缺口补满队列。
+ *
+ * v2.0.0
  * - 将整波同步生成改为分帧队列生成，每 0.1 秒最多生成一只特感。
  * - 排队任务计入总数量和职业数量预留，防止跨周期突破配置上限。
  * - 每个任务连续失败三次后移至队尾，并使用无方向偏好重新尝试。
@@ -23,16 +27,16 @@
 Profiler g_profiler;
 #endif
 
-#define SI_SMOKER                            0
-#define SI_BOOMER                            1
-#define SI_HUNTER                            2
-#define SI_SPITTER                           3
-#define SI_JOCKEY                            4
-#define SI_CHARGER                           5
-#define SI_MAX_SIZE                          6
+#define SI_SMOKER               0
+#define SI_BOOMER               1
+#define SI_HUNTER               2
+#define SI_SPITTER              3
+#define SI_JOCKEY               4
+#define SI_CHARGER              5
+#define SI_MAX_SIZE             6
 
-#define SPAWN_QUEUE_INTERVAL                 0.1
-#define SPAWN_TASK_MAX_ATTEMPTS              3
+#define SPAWN_QUEUE_INTERVAL    0.1
+#define SPAWN_TASK_MAX_ATTEMPTS 3
 
 enum
 {
@@ -65,18 +69,15 @@ Handle
 ArrayList g_aSpawnQueue;
 
 ConVar
-  g_cSILimit,
-  g_cSpawnSize,
   g_cSpawnLimits[SI_MAX_SIZE],
   g_cSpawnWeights[SI_MAX_SIZE],
   g_cScaleWeights,
   g_cSpawnTimeMode,
   g_cSpawnTimeMin,
   g_cSpawnTimeMax,
+  g_cBasePlayers,
   g_cBaseLimit,
   g_cExtraLimit,
-  g_cBaseSize,
-  g_cExtraSize,
   g_cTankStatusAction,
   g_cTankStatusLimits,
   g_cTankStatusWeights,
@@ -93,7 +94,6 @@ float
   g_fSpawnTimeMin,
   g_fSpawnTimeMax,
   g_fExtraLimit,
-  g_fExtraSize,
   g_fSuicideTime,
   g_fRushDistance,
   g_fFirstSpawnTime,
@@ -112,13 +112,11 @@ static const char
 
 int
   g_iSILimit,
-  g_iSpawnSize,
   g_iDirection,
   g_iSpawnLimits[SI_MAX_SIZE],
   g_iSpawnWeights[SI_MAX_SIZE],
   g_iSpawnTimeMode,
   g_iTankStatusAction,
-  g_iSILimitCache                  = -1,
   g_iSpawnLimitsCache[SI_MAX_SIZE] = {
     -1,
     -1,
@@ -127,10 +125,12 @@ int
     -1,
     -1
   },
-  g_iSpawnWeightsCache[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iTankStatusLimits[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iTankStatusWeights[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iSpawnSizeCache = -1, g_iSpawnCounts[SI_MAX_SIZE], g_iBaseLimit, g_iBaseSize, g_iCurrentClass = -1;
+  g_iSpawnWeightsCache[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iTankStatusLimits[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iTankStatusWeights[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iSpawnCounts[SI_MAX_SIZE], g_iBasePlayers, g_iBaseLimit, g_iCurrentClass = -1;
 
 bool
   g_bLateLoad,
+  g_bConfigsLoaded,
+  g_bSuppressScaleUpdate,
   g_bInSpawnTime,
   g_bScaleWeights,
   g_bLeftSafeArea,
@@ -141,7 +141,7 @@ public Plugin myinfo =
   name        = "Special Spawner",
   author      = "Tordecybombo, breezy, laoyutang",
   description = "Provides customisable special infected spawing beyond vanilla coop limits",
-  version     = "2.0.0",
+  version     = "2.1.0",
 };
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
@@ -152,10 +152,8 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 
 public void OnPluginStart()
 {
-  g_aSpawnQueue = new ArrayList(SPAWN_TASK_SIZE);
+  g_aSpawnQueue               = new ArrayList(SPAWN_TASK_SIZE);
 
-  g_cSILimit                  = CreateConVar("ss_si_limit", "12", "同时存在的最大特感数量", _, true, 1.0, true, 32.0);
-  g_cSpawnSize                = CreateConVar("ss_spawn_size", "4", "一次产生多少只特感", _, true, 1.0, true, 32.0);
   g_cSpawnLimits[SI_SMOKER]   = CreateConVar("ss_smoker_limit", "2", "同时存在的最大smoker数量", _, true, 0.0, true, 32.0);
   g_cSpawnLimits[SI_BOOMER]   = CreateConVar("ss_boomer_limit", "2", "同时存在的最大boomer数量", _, true, 0.0, true, 32.0);
   g_cSpawnLimits[SI_HUNTER]   = CreateConVar("ss_hunter_limit", "4", "同时存在的最大hunter数量", _, true, 0.0, true, 32.0);
@@ -174,10 +172,9 @@ public void OnPluginStart()
   g_cSpawnTimeMax             = CreateConVar("ss_time_max", "15.0", "特感的最大产生时间", _, true, 1.0);
   g_cSpawnTimeMode            = CreateConVar("ss_time_mode", "1", "特感的刷新时间模式[0 = 随机 | 1 = 递增(杀的越快刷的越快) | 2 = 递减(杀的越慢刷的越快)]", _, true, 0.0, true, 2.0);
 
-  g_cBaseLimit                = CreateConVar("ss_base_limit", "2", "生还者团队不超过2人时有多少个特感", _, true, 0.0, true, 32.0);
-  g_cExtraLimit               = CreateConVar("ss_extra_limit", "1", "生还者团队每增加一人可增加多少个特感", _, true, 0.0, true, 32.0);
-  g_cBaseSize                 = CreateConVar("ss_base_size", "2", "生还者团队不超过2人时一次产生多少只特感", _, true, 0.0, true, 32.0);
-  g_cExtraSize                = CreateConVar("ss_extra_size", "2", "生还者团队每增加多少玩家人一次多产生一只特感", _, true, 1.0, true, 32.0);
+  g_cBasePlayers              = CreateConVar("ss_base_players", "4", "基准幸存者人数, 不超过该人数时使用ss_base_limit", _, true, 1.0, true, 32.0);
+  g_cBaseLimit                = CreateConVar("ss_base_limit", "4", "幸存者人数不超过ss_base_players时的特感总上限", _, true, 1.0, true, 32.0);
+  g_cExtraLimit               = CreateConVar("ss_extra_limit", "1.0", "超过基准人数后, 每增加1名幸存者增加的特感上限, 可为小数", _, true, 0.0, true, 32.0);
   g_cTankStatusAction         = CreateConVar("ss_tankstatus_action", "1", "坦克产生后是否对当前刷特参数进行修改, 坦克死完后恢复?[0 = 忽略(保持原有的刷特状态) | 1 = 自定义]", _, true, 0.0, true, 1.0);
   g_cTankStatusLimits         = CreateConVar("ss_tankstatus_limits", "2;1;4;1;4;4", "坦克产生后每种特感数量的自定义参数");
   g_cTankStatusWeights        = CreateConVar("ss_tankstatus_weights", "100;400;100;200;100;100", "坦克产生后每种特感比重的自定义参数");
@@ -193,23 +190,20 @@ public void OnPluginStart()
   g_cDiscardRange             = FindConVar("z_discard_range");
   g_cSafeSpawnRange           = FindConVar("z_safe_spawn_range");
 
-  g_cSpawnSize.AddChangeHook(CvarChanged_Limits);
   for (int i; i < SI_MAX_SIZE; i++)
   {
     g_cSpawnLimits[i].AddChangeHook(CvarChanged_Limits);
     g_cSpawnWeights[i].AddChangeHook(CvarChanged_General);
   }
 
-  g_cSILimit.AddChangeHook(CvarChanged_Times);
   g_cSpawnTimeMin.AddChangeHook(CvarChanged_Times);
   g_cSpawnTimeMax.AddChangeHook(CvarChanged_Times);
   g_cSpawnTimeMode.AddChangeHook(CvarChanged_Times);
 
   g_cScaleWeights.AddChangeHook(CvarChanged_General);
+  g_cBasePlayers.AddChangeHook(CvarChanged_General);
   g_cBaseLimit.AddChangeHook(CvarChanged_General);
   g_cExtraLimit.AddChangeHook(CvarChanged_General);
-  g_cBaseSize.AddChangeHook(CvarChanged_General);
-  g_cExtraSize.AddChangeHook(CvarChanged_General);
   g_cSuicideTime.AddChangeHook(CvarChanged_General);
   g_cRushDistance.AddChangeHook(CvarChanged_General);
   g_cFirstSpawnTime.AddChangeHook(CvarChanged_General);
@@ -237,9 +231,6 @@ public void OnPluginStart()
   RegAdminCmd("sm_type", cmdType, ADMFLAG_ROOT, "随机轮换模式");
 
   HookEntityOutput("trigger_finale", "FinaleStart", OnFinaleStart);
-
-  if (g_bLateLoad && L4D_HasAnySurvivorLeftSafeArea())
-    L4D_OnFirstSurvivorLeftSafeArea_Post(0);
 }
 
 public void OnPluginEnd()
@@ -433,49 +424,111 @@ Action cmdSetLimit(int client, int args)
     {
       ResetLimits();
       ReplyToCommand(client, "[SS] Spawn Limits reset to default values");
+      return Plugin_Handled;
     }
-  }
-  else if (args == 2) {
-    int limit = GetCmdArgInt(2);
-    if (limit < 0)
-      ReplyToCommand(client, "[SS] Limit value must be >= 0");
-    else {
-      char arg[16];
-      GetCmdArg(1, arg, sizeof arg);
-      if (strcmp(arg, "all", false) == 0)
-      {
-        for (int i; i < SI_MAX_SIZE; i++)
-          g_cSpawnLimits[i].IntValue = limit;
 
-        PrintToChatAll("\x01[SS] All SI limits have been set to \x05%d", limit);
-      }
-      else if (strcmp(arg, "max", false) == 0) {
-        g_cSILimit.IntValue = limit;
-        PrintToChatAll("\x01[SS] -> \x04Max \x01SI limit set to \x05%i", limit);
-      }
-      else if (strcmp(arg, "group", false) == 0 || strcmp(arg, "wave", false) == 0) {
-        g_cSpawnSize.IntValue = limit;
-        PrintToChatAll("\x01[SS] -> SI will spawn in \x04groups\x01 of \x05%i", limit);
-      }
-      else {
-        for (int i; i < SI_MAX_SIZE; i++)
-        {
-          if (strcmp(g_sZombieClass[i], arg, false) == 0)
-          {
-            g_cSpawnLimits[i].IntValue = limit;
-            PrintToChatAll("\x01[SS] \x04%s \x01limit set to \x05%i", arg, limit);
-          }
-        }
-      }
+    ShowLimitUsage(client);
+    return Plugin_Handled;
+  }
+
+  if (args != 2)
+  {
+    ShowLimitUsage(client);
+    return Plugin_Handled;
+  }
+
+  char arg[16];
+  GetCmdArg(1, arg, sizeof arg);
+
+  int baseLimit;
+  if (strcmp(arg, "base", false) == 0)
+  {
+    if (!GetCmdArgIntEx(2, baseLimit) || baseLimit < 1 || baseLimit > 32)
+    {
+      ReplyToCommand(client, "[SS] Base limit must be an integer between 1 and 32");
+      return Plugin_Handled;
+    }
+
+    g_bSuppressScaleUpdate = true;
+    g_cBaseLimit.IntValue  = baseLimit;
+    g_bSuppressScaleUpdate = false;
+    GetCvars_General();
+    SetSpawnCount();
+    return Plugin_Handled;
+  }
+
+  float increase;
+  if (strcmp(arg, "increase", false) == 0)
+  {
+    if (!GetCmdArgFloatEx(2, increase) || increase < 0.0 || increase > 32.0)
+    {
+      ReplyToCommand(client, "[SS] Per-player increase must be between 0.0 and 32.0");
+      return Plugin_Handled;
+    }
+
+    g_bSuppressScaleUpdate   = true;
+    g_cExtraLimit.FloatValue = increase;
+    g_bSuppressScaleUpdate   = false;
+    GetCvars_General();
+    SetSpawnCount();
+    return Plugin_Handled;
+  }
+
+  if (GetCmdArgIntEx(1, baseLimit))
+  {
+    if (baseLimit < 1 || baseLimit > 32 || !GetCmdArgFloatEx(2, increase) || increase < 0.0 || increase > 32.0)
+    {
+      ReplyToCommand(client, "[SS] Usage: sm_limit <base: 1-32> <increase: 0.0-32.0>");
+      return Plugin_Handled;
+    }
+
+    g_bSuppressScaleUpdate   = true;
+    g_cBaseLimit.IntValue    = baseLimit;
+    g_cExtraLimit.FloatValue = increase;
+    g_bSuppressScaleUpdate   = false;
+    GetCvars_General();
+    SetSpawnCount();
+    return Plugin_Handled;
+  }
+
+  int limit;
+  if (!GetCmdArgIntEx(2, limit) || limit < 0 || limit > 32)
+  {
+    ReplyToCommand(client, "[SS] Class limit must be an integer between 0 and 32");
+    return Plugin_Handled;
+  }
+
+  if (strcmp(arg, "all", false) == 0)
+  {
+    for (int i; i < SI_MAX_SIZE; i++)
+      g_cSpawnLimits[i].IntValue = limit;
+
+    PrintToChatAll("\x01[SS] All SI limits have been set to \x05%d", limit);
+    return Plugin_Handled;
+  }
+
+  for (int i; i < SI_MAX_SIZE; i++)
+  {
+    if (strcmp(g_sZombieClass[i], arg, false) == 0)
+    {
+      g_cSpawnLimits[i].IntValue = limit;
+      PrintToChatAll("\x01[SS] \x04%s \x01limit set to \x05%i", arg, limit);
+      return Plugin_Handled;
     }
   }
-  else {
-    ReplyToCommand(client, "\x04!limit/sm_limit \x05<class> <limit>");
-    ReplyToCommand(client, "\x05<class> \x01[ all | max | group/wave | smoker | boomer | hunter | spitter | jockey | charger ]");
-    ReplyToCommand(client, "\x05<limit> \x01[ >= 0 ]");
-  }
+
+  ShowLimitUsage(client);
 
   return Plugin_Handled;
+}
+
+void ShowLimitUsage(int client)
+{
+  ReplyToCommand(client, "\x04!limit/sm_limit \x05reset");
+  ReplyToCommand(client, "\x04!limit/sm_limit \x05<base> <increase>");
+  ReplyToCommand(client, "\x04!limit/sm_limit \x05base <1-32> | increase <0.0-32.0>");
+  ReplyToCommand(client, "\x04!limit/sm_limit \x05<class> <0-32>");
+  ReplyToCommand(client, "\x05<class> \x01[ all | smoker | boomer | hunter | spitter | jockey | charger ]");
 }
 
 Action cmdSetWeight(int client, int args)
@@ -661,14 +714,28 @@ void SetSiType(int class)
   g_iCurrentClass = class;
 }
 
+public void OnAutoConfigsBuffered()
+{
+  g_bConfigsLoaded = false;
+}
+
 public void OnConfigsExecuted()
 {
   GetCvars_Limits();
-  GetCvars_Times();
   GetCvars_General();
+  GetCvars_Times();
+  SetSpawnCount(false);
   GetCvars_TankStatus();
   GetCvars_TankCustom();
   TweakSettings(false);
+  g_bConfigsLoaded = true;
+
+  if (g_bLateLoad)
+  {
+    g_bLateLoad = false;
+    if (L4D_HasAnySurvivorLeftSafeArea())
+      L4D_OnFirstSurvivorLeftSafeArea_Post(0);
+  }
 }
 
 void CvarChanged_Limits(ConVar convar, const char[] oldValue, const char[] newValue)
@@ -678,7 +745,6 @@ void CvarChanged_Limits(ConVar convar, const char[] oldValue, const char[] newVa
 
 void GetCvars_Limits()
 {
-  g_iSpawnSize = g_cSpawnSize.IntValue;
   for (int i; i < SI_MAX_SIZE; i++)
     g_iSpawnLimits[i] = g_cSpawnLimits[i].IntValue;
 }
@@ -690,7 +756,6 @@ void CvarChanged_Times(ConVar convar, const char[] oldValue, const char[] newVal
 
 void GetCvars_Times()
 {
-  g_iSILimit       = g_cSILimit.IntValue;
   g_fSpawnTimeMin  = g_cSpawnTimeMin.FloatValue;
   g_fSpawnTimeMax  = g_cSpawnTimeMax.FloatValue;
   g_iSpawnTimeMode = g_cSpawnTimeMode.IntValue;
@@ -704,7 +769,12 @@ void GetCvars_Times()
 void CalculateSpawnTimes()
 {
   if (g_iSILimit <= 1 || g_iSpawnTimeMode <= 0)
-    g_fSpawnTimes[0] = g_fSpawnTimeMax;
+  {
+    for (int i; i <= MaxClients; i++)
+      g_fSpawnTimes[i] = g_fSpawnTimeMax;
+
+    return;
+  }
   else {
     float unit = (g_fSpawnTimeMax - g_fSpawnTimeMin) / (g_iSILimit - 1);
     switch (g_iSpawnTimeMode)
@@ -729,6 +799,9 @@ void CalculateSpawnTimes()
 void CvarChanged_General(ConVar convar, const char[] oldValue, const char[] newValue)
 {
   GetCvars_General();
+
+  if (g_bConfigsLoaded && !g_bSuppressScaleUpdate && (convar == g_cBasePlayers || convar == g_cBaseLimit || convar == g_cExtraLimit))
+    SetSpawnCount();
 }
 
 void GetCvars_General()
@@ -738,10 +811,9 @@ void GetCvars_General()
   for (int i; i < SI_MAX_SIZE; i++)
     g_iSpawnWeights[i] = g_cSpawnWeights[i].IntValue;
 
+  g_iBasePlayers    = g_cBasePlayers.IntValue;
   g_iBaseLimit      = g_cBaseLimit.IntValue;
   g_fExtraLimit     = g_cExtraLimit.FloatValue;
-  g_iBaseSize       = g_cBaseSize.IntValue;
-  g_fExtraSize      = g_cExtraSize.FloatValue;
   g_fSuicideTime    = g_cSuicideTime.FloatValue;
   g_fRushDistance   = g_cRushDistance.FloatValue;
   g_fFirstSpawnTime = g_cFirstSpawnTime.FloatValue;
@@ -874,34 +946,33 @@ Action tmrUpdate(Handle timer)
   return Plugin_Continue;
 }
 
-void SetSpawnCount()
+void SetSpawnCount(bool announce = true)
 {
-  int count;
-  int limit;
-  int spawnSize;
+  int survivorCount;
   for (int i = 1; i <= MaxClients; i++)
   {
     if (IsClientInGame(i) && GetClientTeam(i) == 2)
-      count++;
+      survivorCount++;
   }
 
-  count -= 2;
-  if (count < 1)
+  int extraPlayers = survivorCount - g_iBasePlayers;
+  if (extraPlayers < 0)
+    extraPlayers = 0;
+
+  int limit = g_iBaseLimit + RoundToNearest(g_fExtraLimit * extraPlayers);
+  if (limit < 1)
+    limit = 1;
+  else if (limit > 32)
+    limit = 32;
+
+  if (limit != g_iSILimit)
   {
-    limit     = g_iBaseLimit;
-    spawnSize = g_iBaseSize;
-  }
-  else {
-    limit     = g_iBaseLimit + RoundToNearest(g_fExtraLimit * count);
-    spawnSize = g_iBaseSize + RoundToNearest(count / g_fExtraSize);
+    g_iSILimit = limit;
+    CalculateSpawnTimes();
   }
 
-  if (limit == g_iSILimit && spawnSize == g_iSpawnSize)
-    return;
-
-  g_cSILimit.IntValue   = limit;
-  g_cSpawnSize.IntValue = spawnSize;
-  PrintToChatAll("\x01[\x05%d特\x01/\x05次\x01] \x05%d特 \x01[\x03%.1f\x01~\x03%.1f\x01]\x04秒", spawnSize <= limit ? spawnSize : limit, limit, g_fSpawnTimeMin, g_fSpawnTimeMax);
+  if (announce)
+    PrintToChatAll("\x01[\x05%d特\x01] [\x03%.1f\x01~\x03%.1f\x01]\x04秒", g_iSILimit, g_fSpawnTimeMin, g_fSpawnTimeMax);
 }
 
 void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
@@ -1012,18 +1083,6 @@ void TankStatusActoin(bool isTankAlive)
 
 void LoadCacheSpawnLimits()
 {
-  if (g_iSILimitCache != -1)
-  {
-    g_cSILimit.IntValue = g_iSILimitCache;
-    g_iSILimitCache     = -1;
-  }
-
-  if (g_iSpawnSizeCache != -1)
-  {
-    g_cSpawnSize.IntValue = g_iSpawnSizeCache;
-    g_iSpawnSizeCache     = -1;
-  }
-
   for (int i; i < SI_MAX_SIZE; i++)
   {
     if (g_iSpawnLimitsCache[i] != -1)
@@ -1107,7 +1166,6 @@ void ExecuteSpawnQueue(int totalSI)
   if (allowedSI <= 0)
     return;
 
-  int spawnSize = g_iSpawnSize > allowedSI ? allowedSI : g_iSpawnSize;
   GetSITypeCount();
 
   // 排队任务视为已预留特感名额，防止后续刷新周期突破总上限和职业上限。
@@ -1119,7 +1177,7 @@ void ExecuteSpawnQueue(int totalSI)
   }
 
   int index;
-  for (int i; i < spawnSize; i++)
+  for (int i; i < allowedSI; i++)
   {
     index = GenerateIndex();
     if (index == -1)
@@ -1131,7 +1189,7 @@ void ExecuteSpawnQueue(int totalSI)
     g_iSpawnCounts[index]++;
   }
 
-  // ss_spawn_size只控制本周期追加量；队列可以跨周期积累，但不能超过全局空缺。
+  // 每个刷新周期将全局空缺全部加入队列，队列任务继续占用总数和职业名额预留。
   if (g_aSpawnQueue.Length)
     StartSpawnQueueTimer();
 }
@@ -1191,8 +1249,8 @@ bool GetSpawnTarget(int &client, bool &rusher)
 void RotateSpawnTask(bool relaxDirection)
 {
   int zombieClass = g_aSpawnQueue.Get(0, SPAWN_TASK_CLASS);
-  int attempts     = g_aSpawnQueue.Get(0, SPAWN_TASK_ATTEMPTS);
-  int relaxed      = g_aSpawnQueue.Get(0, SPAWN_TASK_RELAXED);
+  int attempts    = g_aSpawnQueue.Get(0, SPAWN_TASK_ATTEMPTS);
+  int relaxed     = g_aSpawnQueue.Get(0, SPAWN_TASK_RELAXED);
 
   g_aSpawnQueue.Erase(0);
   int task = g_aSpawnQueue.Push(zombieClass);
@@ -1258,7 +1316,7 @@ Action tmrProcessSpawnQueue(Handle timer)
   int   zombie;
   float vPos[3];
   g_bInSpawnTime = true;
-  bool found = L4D_GetRandomPZSpawnPosition(client, classIndex + 1, 1, vPos);
+  bool found     = L4D_GetRandomPZSpawnPosition(client, classIndex + 1, 1, vPos);
   if (found)
   {
     vPos[2] += 5.0;
