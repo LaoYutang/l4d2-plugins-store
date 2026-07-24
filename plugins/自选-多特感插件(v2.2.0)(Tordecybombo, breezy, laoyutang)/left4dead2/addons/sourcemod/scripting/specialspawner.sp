@@ -1,5 +1,8 @@
 /*
- * Special Spawner v2.1.0
+ * Special Spawner v2.2.0
+ *
+ * v2.2.0
+ * - 新增客户端槽位预留配置，刷特队列不会占用为新玩家连接保留的槽位。
  *
  * v2.1.0
  * - 新增可配置的基准人数，特感总上限由基准人数、基础上限和每人增量直接计算。
@@ -78,6 +81,7 @@ ConVar
   g_cBasePlayers,
   g_cBaseLimit,
   g_cExtraLimit,
+  g_cReservedSlots,
   g_cTankStatusAction,
   g_cTankStatusLimits,
   g_cTankStatusWeights,
@@ -125,7 +129,7 @@ int
     -1,
     -1
   },
-  g_iSpawnWeightsCache[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iTankStatusLimits[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iTankStatusWeights[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iSpawnCounts[SI_MAX_SIZE], g_iBasePlayers, g_iBaseLimit, g_iCurrentClass = -1;
+  g_iSpawnWeightsCache[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iTankStatusLimits[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iTankStatusWeights[SI_MAX_SIZE] = { -1, -1, -1, -1, -1, -1 }, g_iSpawnCounts[SI_MAX_SIZE], g_iBasePlayers, g_iBaseLimit, g_iReservedSlots, g_iCurrentClass = -1;
 
 bool
   g_bLateLoad,
@@ -141,7 +145,7 @@ public Plugin myinfo =
   name        = "Special Spawner",
   author      = "Tordecybombo, breezy, laoyutang",
   description = "Provides customisable special infected spawing beyond vanilla coop limits",
-  version     = "2.1.0",
+  version     = "2.2.0",
 };
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
@@ -175,6 +179,7 @@ public void OnPluginStart()
   g_cBasePlayers              = CreateConVar("ss_base_players", "4", "基准幸存者人数, 不超过该人数时使用ss_base_limit", _, true, 1.0, true, 32.0);
   g_cBaseLimit                = CreateConVar("ss_base_limit", "4", "幸存者人数不超过ss_base_players时的特感总上限", _, true, 1.0, true, 32.0);
   g_cExtraLimit               = CreateConVar("ss_extra_limit", "1.0", "超过基准人数后, 每增加1名幸存者增加的特感上限, 可为小数", _, true, 0.0, true, 32.0);
+  g_cReservedSlots            = CreateConVar("ss_reserved_slots", "2", "为新玩家连接预留的客户端槽位数量, 0=关闭", _, true, 0.0, true, 32.0);
   g_cTankStatusAction         = CreateConVar("ss_tankstatus_action", "1", "坦克产生后是否对当前刷特参数进行修改, 坦克死完后恢复?[0 = 忽略(保持原有的刷特状态) | 1 = 自定义]", _, true, 0.0, true, 1.0);
   g_cTankStatusLimits         = CreateConVar("ss_tankstatus_limits", "2;1;4;1;4;4", "坦克产生后每种特感数量的自定义参数");
   g_cTankStatusWeights        = CreateConVar("ss_tankstatus_weights", "100;400;100;200;100;100", "坦克产生后每种特感比重的自定义参数");
@@ -204,6 +209,7 @@ public void OnPluginStart()
   g_cBasePlayers.AddChangeHook(CvarChanged_General);
   g_cBaseLimit.AddChangeHook(CvarChanged_General);
   g_cExtraLimit.AddChangeHook(CvarChanged_General);
+  g_cReservedSlots.AddChangeHook(CvarChanged_General);
   g_cSuicideTime.AddChangeHook(CvarChanged_General);
   g_cRushDistance.AddChangeHook(CvarChanged_General);
   g_cFirstSpawnTime.AddChangeHook(CvarChanged_General);
@@ -814,6 +820,7 @@ void GetCvars_General()
   g_iBasePlayers    = g_cBasePlayers.IntValue;
   g_iBaseLimit      = g_cBaseLimit.IntValue;
   g_fExtraLimit     = g_cExtraLimit.FloatValue;
+  g_iReservedSlots  = g_cReservedSlots.IntValue;
   g_fSuicideTime    = g_cSuicideTime.FloatValue;
   g_fRushDistance   = g_cRushDistance.FloatValue;
   g_fFirstSpawnTime = g_cFirstSpawnTime.FloatValue;
@@ -1163,6 +1170,10 @@ void ExecuteSpawnQueue(int totalSI)
 {
   int queuedSI  = g_aSpawnQueue.Length;
   int allowedSI = g_iSILimit - totalSI - queuedSI;
+  int availableSlots = GetSpawnClientLimit() - GetClientCount(false) - queuedSI;
+  if (availableSlots < allowedSI)
+    allowedSI = availableSlots;
+
   if (allowedSI <= 0)
     return;
 
@@ -1205,6 +1216,15 @@ void ClearSpawnQueue()
   delete g_hQueueTimer;
   if (g_aSpawnQueue)
     g_aSpawnQueue.Clear();
+}
+
+int GetSpawnClientLimit()
+{
+  int reservedSlots = g_iReservedSlots;
+  if (reservedSlots > MaxClients)
+    reservedSlots = MaxClients;
+
+  return MaxClients - reservedSlots;
 }
 
 bool GetSpawnTarget(int &client, bool &rusher)
@@ -1300,9 +1320,11 @@ Action tmrProcessSpawnQueue(Handle timer)
     return Plugin_Continue;
   }
 
-  // 客户端槽位已满时生成必然失败。
+  int spawnClientLimit = GetSpawnClientLimit();
+
+  // 达到刷特客户端上限时保留预留槽位。
   // 保留队首任务，不执行昂贵找位，也不消耗任务失败次数。
-  if (GetClientCount(false) >= MaxClients)
+  if (GetClientCount(false) >= spawnClientLimit)
     return Plugin_Continue;
 
   int  client;
@@ -1339,7 +1361,7 @@ Action tmrProcessSpawnQueue(Handle timer)
     return Plugin_Continue;
   }
 
-  if (GetClientCount(false) < MaxClients)
+  if (GetClientCount(false) < spawnClientLimit)
     MarkSpawnTaskFailed();
 
   return Plugin_Continue;
