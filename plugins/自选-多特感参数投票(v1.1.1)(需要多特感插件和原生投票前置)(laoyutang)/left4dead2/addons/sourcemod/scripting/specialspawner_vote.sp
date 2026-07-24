@@ -1,6 +1,9 @@
 /*
  * Special Spawner Vote
  *
+ * v1.1.1
+ * - 缩短原生投票标题和通过提示，避免游戏内换行后显示被遮挡。
+ *
  * v1.1.0
  * - 数量投票改为base/increase缩放参数，支持一次提交两个数字。
  * - 移除max/group/wave投票目标。
@@ -77,7 +80,7 @@ public Plugin myinfo =
   name        = "Special Spawner Vote",
   author      = "laoyutang",
   description = "Adds native votes for the Special Spawner timer and limit commands",
-  version     = "1.1.0",
+  version     = "1.1.1",
 };
 
 public void OnPluginStart()
@@ -288,17 +291,17 @@ void StartLimitVote(int client, PendingLimitAction action, const char[] target, 
 
   char title[128];
   if (action == PendingLimit_Reset)
-    Format(title, sizeof title, "发起投票: 重置各类特感数量上限?");
+    Format(title, sizeof title, "重置职业上限?");
   else if (action == PendingLimit_Base)
-    Format(title, sizeof title, "投票: 基础特感数设为 %d?", baseLimit);
+    Format(title, sizeof title, "基础特感:%d?", baseLimit);
   else if (action == PendingLimit_Increase)
-    Format(title, sizeof title, "投票: 每增加1名玩家, 特感增量 %.2f?", increase);
+    Format(title, sizeof title, "每人增量:%.2f?", increase);
   else if (action == PendingLimit_Scale)
-    Format(title, sizeof title, "投票: 基础%d特, 每多1人+%.2f特?", baseLimit, increase);
+    Format(title, sizeof title, "基础%d/每人+%.2f?", baseLimit, increase);
   else if (strcmp(target, "all") == 0)
-    Format(title, sizeof title, "发起投票: 所有特感职业上限设为 %d?", limit);
+    Format(title, sizeof title, "全职业上限:%d?", limit);
   else
-    Format(title, sizeof title, "发起投票: %s 上限设为 %d?", target, limit);
+    Format(title, sizeof title, "%s上限:%d?", target, limit);
 
   DisplayPendingVote(client, title);
 }
@@ -315,9 +318,9 @@ void StartTimerVote(int client, float min, float max, bool range)
 
   char title[128];
   if (range)
-    Format(title, sizeof title, "发起投票: 特感刷新时间设为 %.1f - %.1f 秒?", min, max);
+    Format(title, sizeof title, "刷新:%.1f~%.1f秒?", min, max);
   else
-    Format(title, sizeof title, "发起投票: 特感刷新时间设为 %.1f 秒?", min);
+    Format(title, sizeof title, "刷新:%.1f秒?", min);
 
   DisplayPendingVote(client, title);
 }
@@ -375,7 +378,7 @@ public void Handler_SpawnVote(L4D2NativeVote vote, VoteAction action, int param1
     return;
   }
 
-  vote.SetPass("设置已应用 (Setting Applied)");
+  vote.SetPass("设置成功");
   ExecutePendingCommand();
   ResetPendingVote();
 }
