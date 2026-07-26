@@ -1,5 +1,8 @@
 /*
- * Special Spawner v2.2.0
+ * Special Spawner v2.2.1
+ *
+ * v2.2.1
+ * - 刷特队列按总上限缺口完整入队，客户端预留槽位仅限制实际生成。
  *
  * v2.2.0
  * - 新增客户端槽位预留配置，刷特队列不会占用为新玩家连接保留的槽位。
@@ -145,7 +148,7 @@ public Plugin myinfo =
   name        = "Special Spawner",
   author      = "Tordecybombo, breezy, laoyutang",
   description = "Provides customisable special infected spawing beyond vanilla coop limits",
-  version     = "2.2.0",
+  version     = "2.2.1",
 };
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
@@ -1170,9 +1173,6 @@ void ExecuteSpawnQueue(int totalSI)
 {
   int queuedSI  = g_aSpawnQueue.Length;
   int allowedSI = g_iSILimit - totalSI - queuedSI;
-  int availableSlots = GetSpawnClientLimit() - GetClientCount(false) - queuedSI;
-  if (availableSlots < allowedSI)
-    allowedSI = availableSlots;
 
   if (allowedSI <= 0)
     return;
