@@ -1,0 +1,42 @@
+// The grenade launcher Explode signature is derived from Left4DHooks by Silvers.
+// Left4DHooks 1.159 corrected the Linux symbol from ExplodeTouch(CBaseEntity *)
+// to CGrenadeLauncher_Projectile::Explode(CGameTrace *, int).
+// Source: https://github.com/SilvDev/Left4DHooks/commit/b676121439e9
+"Games"
+{
+	"left4dead2"
+	{
+		"Functions"
+		{
+			"GrenadeTeleport::CGrenadeLauncher_Projectile::Explode"
+			{
+				"signature"		"GrenadeTeleport::CGrenadeLauncher_Projectile::Explode"
+				"callconv"		"thiscall"
+				"return"		"int"
+				"this"			"entity"
+				"arguments"
+				{
+					"trace"
+					{
+						"type"	"cbaseentity"
+					}
+					"unknown"
+					{
+						"type"	"int"
+					}
+				}
+			}
+		}
+
+		"Signatures"
+		{
+			"GrenadeTeleport::CGrenadeLauncher_Projectile::Explode"
+			{
+				"library"	"server"
+				"linux"		"@_ZN27CGrenadeLauncher_Projectile7ExplodeEP10CGameTracei"
+				"windows"	"\x2A\x2A\x2A\x2A\x2A\x2A\x2A\x2A\x2A\xA1\x2A\x2A\x2A\x2A\x33\x2A\x89\x2A\x2A\x8B\x2A\x2A\x53\x56\x8B\x2A\x8B\x2A\x2A\x2A\x2A\x2A\xC1\x2A\x2A\x57"
+				/* ? ? ? ? ? ? ? ? ? A1 ? ? ? ? 33 ? 89 ? ? 8B ? ? 53 56 8B ? 8B ? ? ? ? ? C1 ? ? 57 */
+			}
+		}
+	}
+}
