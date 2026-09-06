@@ -14,7 +14,9 @@ l4d2-plugins-store/
 │   │       │   ├── scripting/      # .sp 源代码文件
 │   │       │   ├── configs/        # 插件配置文件
 │   │       │   └── translations/   # 翻译文件（含中文 chi/ 目录）
-│   │       └── cfg/sourcemod/      # ConVar 配置文件 (.cfg)
+│   │       ├── cfg/sourcemod/      # ConVar 配置文件 (.cfg)
+│   │       ├── scripts/vscripts/   # VScript 插件源码及加载入口 (.nut)
+│   │       └── ems/                # VScript 使用的配置和数据
 │   └── ...
 └── LICENSE
 ```
@@ -22,8 +24,8 @@ l4d2-plugins-store/
 若希望向本仓库贡献新插件，请确保：
 1. **目录命名规范**：`自选-插件功能描述(版本号)(作者)`
 2. **目录结构完整**：插件内容须放置于 `left4dead2/` 子目录下，保持与服务器目录一致的路径结构
-3. **包含编译文件**：`addons/sourcemod/plugins/` 目录下必须包含可运行的 `.smx` 文件
-4. **建议包含源码**：在 `addons/sourcemod/scripting/` 下附上 `.sp` 源代码文件
+3. **包含可运行文件**：SourceMod 插件须在 `addons/sourcemod/plugins/` 中包含 `.smx`；VScript 插件须在 `scripts/vscripts/` 中包含 `.nut` 和加载入口，无需 `.smx`
+4. **包含源码与安装说明**：SourceMod 插件建议附上 `addons/sourcemod/scripting/` 下的 `.sp`；VScript 插件应说明共享加载文件（例如 `director_base_addon.nut`）的合并方式，避免覆盖其他插件
 5. **配置文件齐全**：如有 ConVar 配置，请一并放入 `cfg/sourcemod/` 目录
 提交方式：Fork 本仓库后发起 Pull Request。
 ## 相关项目
