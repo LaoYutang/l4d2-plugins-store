@@ -1,13 +1,13 @@
 // Random Air Strikes on All Maps - original script and response rules by ChimiChamo.
 // Fixes and repository packaging by laoyutang.
 // Workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3163466945
-// Repository maintenance version 1.0.1. Requires L4D2 VScript only.
+// Repository maintenance version 1.0.2. Requires L4D2 VScript only.
 if ("ChCh_RandomAirStrikes" in this)
     return;
 
 ChCh_RandomAirStrikes <-
 {
-    Version = "1.0.1"
+    Version = "1.0.2"
     SettingsFileName = "random_airstrikes/Settings.cfg"
     Defaults =
     {
@@ -49,10 +49,107 @@ ChCh_RandomAirStrikes <-
     Generation = 0
     NavAreas = []
     OwnedEntities = []
+    LastUpdateTime = null
+    LastStatus = ""
+    LastFailure = ""
+    LastTrace = ""
+    SearchStats = {}
+    NextFailureLogTime = 0.0
+    StrikeCount = 0
 
     function Log(message)
     {
         printl("[RandomAirStrikes] " + message);
+    }
+
+    function SetStatus(status)
+    {
+        if (status == LastStatus) return;
+        LastStatus = status;
+        Log("State: " + status);
+    }
+
+    function GetBlockReason(includeTimers = true)
+    {
+        if (Settings.allowed_gamemodes.find(Director.GetGameModeBase()) == null) return "mode_disabled";
+        if (Settings.disallowed_maps.find(Director.GetMapName()) != null) return "map_disabled";
+        if (!RoundActive) return "round_not_started";
+        if (Director.IsFinaleWon()) return "finale_won";
+        if (Director.IsPlayingIntro()) return "intro";
+        if (GetLivingSurvivors().len() == 0) return "no_living_survivors";
+        if (!Director.HasAnySurvivorLeftSafeArea()) return "waiting_for_safe_area_exit";
+        if (includeTimers && (LeavingTime == null || Time() < LeavingTime + Settings.initial_delay))
+            return "initial_delay";
+        if (includeTimers && Time() < NextStrikeTime) return "cooldown";
+        if (NavAreas.len() == 0) return "no_nav_areas";
+        return "ready";
+    }
+
+    function RefreshNavAreas()
+    {
+        local areas = {};
+        NavMesh.GetAllAreas(areas);
+        NavAreas.clear();
+        foreach (nav in areas) NavAreas.append(nav);
+    }
+
+    function RejectPosition(reason, trace = null)
+    {
+        if (!(reason in SearchStats)) SearchStats[reason] <- 0;
+        SearchStats[reason]++;
+        LastFailure = reason;
+        if (trace != null)
+            LastTrace = reason + ": hit=" + trace.hit + " startsolid=" + trace.startsolid +
+                " fraction=" + trace.fraction + " pos=" + trace.pos +
+                " entity=" + (trace.enthit != null && trace.enthit.IsValid() ? trace.enthit.GetClassname() : "null");
+        return null;
+    }
+
+    function LogSearchFailure(force = false)
+    {
+        if (!force && Time() < NextFailureLogTime) return;
+        NextFailureLogTime = Time() + 30.0;
+        local details = "";
+        foreach (key, value in SearchStats) details += " " + key + "=" + value;
+        Log("No strike position: " + LastFailure + ";" + details);
+        if (LastTrace != "") Log("Last trace: " + LastTrace);
+    }
+
+    // Server-console diagnostics; probing does not create entities or cause damage.
+    function Diagnose()
+    {
+        Log("Status: version=" + Version + " map=" + Director.GetMapName() +
+            " mode=" + Director.GetGameModeBase() + " active=" + RoundActive +
+            " last_update=" + LastUpdateTime + " now=" + Time() + " nav=" + NavAreas.len());
+        Log("Gate: " + GetBlockReason() + "; left_safe_area=" + Director.HasAnySurvivorLeftSafeArea() +
+            " leaving_time=" + LeavingTime + " next_strike=" + NextStrikeTime + " strikes=" + StrikeCount);
+        Log("Settings: initial_delay=" + Settings.initial_delay + " chance=1/" + Settings.one_in_what_chance +
+            " interval=" + Settings.check_interval + " cooldown=" + Settings.air_strike_delay +
+            " max_distance=" + Settings.max_strike_distance + " plane_height=" + Settings.plane_height +
+            " drop_bomb=" + Settings.drop_bomb);
+        if (!CanRunAction(Generation)) return;
+        if (NavAreas.len() == 0) RefreshNavAreas();
+        local strike = FindStrikePosition();
+        if (strike == null) LogSearchFailure(true);
+        else Log("Probe OK: position=" + strike.position + " flight_height=" + strike.planeHeight);
+    }
+
+    function TestAirStrike()
+    {
+        local reason = GetBlockReason(false);
+        if (reason == "no_nav_areas")
+        {
+            RefreshNavAreas();
+            reason = GetBlockReason(false);
+        }
+        if (reason != "ready")
+        {
+            Log("Test blocked: " + reason);
+            return false;
+        }
+        // Bypass the random roll and timers, but retain map/round/position checks.
+        // A manual test schedules only a flyover, never a bomb or a horde.
+        return DoAirStrike(true);
     }
 
     // Read the original one-setting-per-line format as data, never as code.
@@ -200,6 +297,13 @@ ChCh_RandomAirStrikes <-
         LeavingTime = null;
         NextCheckTime = 0.0;
         NextStrikeTime = 0.0;
+        LastUpdateTime = null;
+        LastStatus = "";
+        LastFailure = "";
+        LastTrace = "";
+        SearchStats.clear();
+        NextFailureLogTime = 0.0;
+        StrikeCount = 0;
         g_MapScript.ScriptedMode_RemoveUpdate(IfBeginAirStrike);
     }
 
@@ -225,36 +329,45 @@ ChCh_RandomAirStrikes <-
         return TraceLine(trace);
     }
 
-    // Ground the nav position from above, then require a clear column for the jet.
-    // L4D2 TraceLine has no portable sky-surface output; worldspawn is NOT a sky test.
+    // Sky brushes also block MASK_SOLID. Fit the jet below an upper collision
+    // instead of rejecting every outdoor point with a low sky boundary.
+    // Native L4D2 traces cannot distinguish sky from a roof: this is a clearance
+    // check, not a sky test. Retain 128 units of margin and a minimum height of 256.
     function GetStrikePosition(spot, ignore)
     {
         local ground = {
             start = spot + Vector(0, 0, 32), end = spot - Vector(0, 0, 64),
             mask = 33570827, ignore = ignore // MASK_SOLID
         };
-        if (!TraceLineWithDefaults(ground) || !ground.hit || ground.startsolid ||
+        if (!TraceLineWithDefaults(ground)) return RejectPosition("ground_trace_failed", ground);
+        if (!ground.hit || ground.startsolid ||
             ground.fraction <= 0 || ground.pos == null ||
             ground.enthit == null || !ground.enthit.IsValid() ||
-            ground.enthit.GetClassname() != "worldspawn") return null;
+            ground.enthit.GetClassname() != "worldspawn") return RejectPosition("invalid_ground", ground);
 
         local position = ground.pos + Vector(0, 0, 8);
         local overhead = {
             start = position, end = position + Vector(0, 0, Settings.plane_height + 128),
             mask = 33570827, ignore = ignore
         };
-        if (!TraceLineWithDefaults(overhead) || overhead.startsolid || overhead.hit || overhead.fraction < 1.0)
-            return null;
-        return position;
+        if (!TraceLineWithDefaults(overhead)) return RejectPosition("overhead_trace_failed", overhead);
+        if (overhead.startsolid || overhead.fraction <= 0 || overhead.fraction > 1.0)
+            return RejectPosition("invalid_overhead", overhead);
+        local planeHeight = (Settings.plane_height + 128) * overhead.fraction - 128;
+        if (planeHeight < 256) return RejectPosition("low_clearance", overhead);
+        return { position = position, planeHeight = planeHeight };
     }
 
     function FindStrikePosition()
     {
+        SearchStats = { nav = NavAreas.len(), nearby = 0, tried = 0, distance = 0, flow = 0 };
+        LastFailure = "";
+        LastTrace = "";
         local leader = Director.GetHighestFlowSurvivor();
-        if (!IsLivingSurvivor(leader)) return null;
+        if (!IsLivingSurvivor(leader)) return RejectPosition("no_flow_survivor");
         local origin = leader.GetOrigin();
         local flow = GetFlowPercentForPosition(origin, true);
-        if (flow < 0 || flow > 100) return null;
+        if (flow < 0 || flow > 100) return RejectPosition("invalid_survivor_flow");
         local candidates = [];
         local maxDistanceSquared = Settings.max_strike_distance * Settings.max_strike_distance;
         foreach (nav in NavAreas)
@@ -264,6 +377,8 @@ ChCh_RandomAirStrikes <-
             if (nav.GetDistanceSquaredToPoint(origin) <= maxDistanceSquared)
                 candidates.append(nav);
         }
+        SearchStats.nearby = candidates.len();
+        if (candidates.len() == 0) return RejectPosition("no_nearby_nav");
 
         for (local attempt = 0; attempt < Settings.max_position_attempts && candidates.len() > 0; attempt++)
         {
@@ -272,15 +387,30 @@ ChCh_RandomAirStrikes <-
             local nav = candidates[index];
             candidates[index] = candidates[candidates.len() - 1];
             candidates.pop();
+            SearchStats.tried++;
             local spot = nav.FindRandomSpot();
-            if ((spot - origin).LengthSqr() > maxDistanceSquared) continue;
+            if ((spot - origin).LengthSqr() > maxDistanceSquared)
+            {
+                SearchStats.distance++;
+                continue;
+            }
             local candidateFlow = GetFlowPercentForPosition(spot, true);
             if (candidateFlow < 0 || candidateFlow > 100 ||
-                fabs(candidateFlow - flow) > Settings.flow_percent_dist_variance) continue;
-            local position = GetStrikePosition(spot, leader);
-            if (position != null && (position - origin).LengthSqr() <= maxDistanceSquared)
-                return position;
+                fabs(candidateFlow - flow) > Settings.flow_percent_dist_variance)
+            {
+                SearchStats.flow++;
+                continue;
+            }
+            local strike = GetStrikePosition(spot, leader);
+            if (strike == null) continue;
+            if ((strike.position - origin).LengthSqr() <= maxDistanceSquared)
+            {
+                LastFailure = "";
+                return strike;
+            }
+            SearchStats.distance++;
         }
+        if (LastFailure == "") LastFailure = "distance_or_flow_limit";
         return null;
     }
 
@@ -291,7 +421,11 @@ ChCh_RandomAirStrikes <-
             origin = where, angles = angles, iMagnitude = Settings.explode_dmg,
             iRadiusOverride = Settings.explode_radius, spawnflags = 68
         }, 1.0);
-        if (boom == null) return;
+        if (boom == null)
+        {
+            Log("Spawn failed: env_explosion");
+            return;
+        }
         foreach (effect in ["weapon_grenadelauncher", "gas_explosion_chunks_02"])
             SpawnTemporary("info_particle_system", {
                 origin = where, angles = angles, effect_name = effect,
@@ -300,6 +434,7 @@ ChCh_RandomAirStrikes <-
         EmitAmbientSoundOn("ambient/explosions/explode_" + RandomInt(1, 3) + ".wav",
             1.0, 120, RandomInt(95, 105), carrier);
         DoEntFire("!self", "Explode", "", 0.0, null, boom);
+        Log("Bomb triggered: position=" + where);
 
         local player = null;
         while (player = Entities.FindByClassnameWithin(player, "player", where, Settings.explode_radius))
@@ -315,25 +450,36 @@ ChCh_RandomAirStrikes <-
             DoEntFire("!self", "RunScriptCode", "ChCh_Horde()", RandomFloat(3.0, 4.0), null, carrier);
     }
 
-    function DoAirStrike()
+    function DoAirStrike(testFlight = false)
     {
-        if (!CanRunAction(Generation) || Time() < NextStrikeTime) return false;
-        local position = FindStrikePosition();
-        if (position == null) return false;
+        if (!CanRunAction(Generation) || (!testFlight && Time() < NextStrikeTime)) return false;
+        local strike = FindStrikePosition();
+        if (strike == null)
+        {
+            LogSearchFailure(testFlight);
+            return false;
+        }
+        local position = strike.position;
         local angles = "0 " + RandomInt(0, 359) + " 0";
         local carrier = SpawnTemporary("info_target", { origin = position }, 15.0);
-        if (carrier == null) return false;
+        if (carrier == null)
+        {
+            Log("Spawn failed: info_target");
+            return false;
+        }
         local plane = SpawnTemporary("prop_dynamic", {
-            origin = position + Vector(0, 0, Settings.plane_height), angles = angles,
+            origin = position + Vector(0, 0, strike.planeHeight), angles = angles,
             model = "models/f18/f18.mdl", fademindist = -1, fademaxdist = 0, solid = 0
         }, 30.0);
         if (plane == null)
         {
+            Log("Spawn failed: prop_dynamic (F18)");
             carrier.Kill();
             return false;
         }
         if (!carrier.ValidateScriptScope())
         {
+            Log("Spawn failed: info_target script scope");
             carrier.Kill();
             plane.Kill();
             return false;
@@ -362,9 +508,12 @@ ChCh_RandomAirStrikes <-
         EntityOutputs.AddOutput(plane, "OnAnimationDone", "!self", "Kill", "", 0.0, 1);
         DoEntFire("!self", "SetAnimation", "flyby" + animation, 0.0, null, plane);
         DoEntFire("!self", "RunScriptCode", "ChCh_Jet()", boomTime - 1.0, null, carrier);
-        if (Settings.drop_bomb == 1)
+        if (!testFlight && Settings.drop_bomb == 1)
             DoEntFire("!self", "RunScriptCode", "ChCh_Bomb()", boomTime + RandomFloat(0.2, 0.5), null, carrier);
         NextStrikeTime = Time() + Settings.air_strike_delay;
+        if (!testFlight) StrikeCount++;
+        Log((testFlight ? "Test flyover" : "Strike #" + StrikeCount) + " started: position=" + position +
+            " flight_height=" + strike.planeHeight + " bomb=" + (!testFlight && Settings.drop_bomb == 1));
         return true;
     }
 
@@ -372,14 +521,18 @@ ChCh_RandomAirStrikes <-
     {
         local now = Time();
         if (!RoundActive || now < NextCheckTime) return;
+        if (LastUpdateTime == null) Log("Update callback is running.");
+        LastUpdateTime = now;
         NextCheckTime = now + Settings.check_interval;
         for (local index = OwnedEntities.len() - 1; index >= 0; index--)
             if (!OwnedEntities[index].IsValid()) OwnedEntities.remove(index);
-        if (!IsAllowed() || Director.IsFinaleWon() || Director.IsPlayingIntro()) return;
-        if (!Director.HasAnySurvivorLeftSafeArea()) return;
+        // round_start can precede usable navigation; do not keep an empty cache forever.
+        if (NavAreas.len() == 0) RefreshNavAreas();
         // Covers script loading after player_left_safe_area was already dispatched.
-        if (LeavingTime == null) LeavingTime = now;
-        if (now < LeavingTime + Settings.initial_delay || now < NextStrikeTime) return;
+        if (LeavingTime == null && Director.HasAnySurvivorLeftSafeArea()) LeavingTime = now;
+        local reason = GetBlockReason();
+        SetStatus(reason);
+        if (reason != "ready") return;
         if (RandomInt(1, Settings.one_in_what_chance) == 1) DoAirStrike();
     }
 
@@ -392,16 +545,28 @@ ChCh_RandomAirStrikes <-
     {
         Cleanup();
         ParseSettings();
-        if (!IsAllowed()) return;
+        Log("Round start: map=" + Director.GetMapName() + " mode=" + Director.GetGameModeBase());
+        if (!IsAllowed())
+        {
+            SetStatus(GetBlockReason());
+            return;
+        }
         if (!IsModelPrecached("models/f18/f18.mdl")) PrecacheModel("models/f18/f18.mdl");
         foreach (sound in ["animation/jets/jet_by_01_mono.wav", "animation/jets/jet_by_02_mono.wav",
             "ambient/explosions/explode_1.wav", "ambient/explosions/explode_2.wav", "ambient/explosions/explode_3.wav"])
             if (!IsSoundPrecached(sound)) PrecacheSound(sound);
-        local areas = {};
-        NavMesh.GetAllAreas(areas);
-        foreach (nav in areas) NavAreas.append(nav);
+        RefreshNavAreas();
         RoundActive = true;
         g_MapScript.ScriptedMode_AddUpdate(IfBeginAirStrike);
+        Log("Update registered; nav=" + NavAreas.len() + " initial_delay=" + Settings.initial_delay +
+            " chance=1/" + Settings.one_in_what_chance + " interval=" + Settings.check_interval);
+    }
+
+    function OnGameEvent_round_start_post_nav(params)
+    {
+        if (!RoundActive) return;
+        RefreshNavAreas();
+        Log("Navigation ready; nav=" + NavAreas.len());
     }
 
     function OnGameEvent_player_left_safe_area(params)
