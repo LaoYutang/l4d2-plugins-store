@@ -1,13 +1,13 @@
 // Random Air Strikes on All Maps - original script and response rules by ChimiChamo.
 // Fixes and repository packaging by laoyutang.
 // Workshop: https://steamcommunity.com/sharedfiles/filedetails/?id=3163466945
-// Repository maintenance version 1.0.0. Requires L4D2 VScript only.
+// Repository maintenance version 1.0.1. Requires L4D2 VScript only.
 if ("ChCh_RandomAirStrikes" in this)
     return;
 
 ChCh_RandomAirStrikes <-
 {
-    Version = "1.0.0"
+    Version = "1.0.1"
     SettingsFileName = "random_airstrikes/Settings.cfg"
     Defaults =
     {
@@ -213,6 +213,18 @@ ChCh_RandomAirStrikes <-
         return entity;
     }
 
+    // L4D2 can omit false flags and unused output fields. Initialize each trace
+    // before calling the engine; a missing fraction must not imply a clear path.
+    function TraceLineWithDefaults(trace)
+    {
+        trace.startsolid <- false;
+        trace.hit <- false;
+        trace.fraction <- 0.0;
+        trace.enthit <- null;
+        trace.pos <- null;
+        return TraceLine(trace);
+    }
+
     // Ground the nav position from above, then require a clear column for the jet.
     // L4D2 TraceLine has no portable sky-surface output; worldspawn is NOT a sky test.
     function GetStrikePosition(spot, ignore)
@@ -221,8 +233,8 @@ ChCh_RandomAirStrikes <-
             start = spot + Vector(0, 0, 32), end = spot - Vector(0, 0, 64),
             mask = 33570827, ignore = ignore // MASK_SOLID
         };
-        if (!TraceLine(ground) || !ground.hit || ground.startsolid ||
-            ground.fraction <= 0 ||
+        if (!TraceLineWithDefaults(ground) || !ground.hit || ground.startsolid ||
+            ground.fraction <= 0 || ground.pos == null ||
             ground.enthit == null || !ground.enthit.IsValid() ||
             ground.enthit.GetClassname() != "worldspawn") return null;
 
@@ -231,7 +243,7 @@ ChCh_RandomAirStrikes <-
             start = position, end = position + Vector(0, 0, Settings.plane_height + 128),
             mask = 33570827, ignore = ignore
         };
-        if (!TraceLine(overhead) || overhead.startsolid || overhead.hit || overhead.fraction < 1.0)
+        if (!TraceLineWithDefaults(overhead) || overhead.startsolid || overhead.hit || overhead.fraction < 1.0)
             return null;
         return position;
     }
@@ -294,7 +306,7 @@ ChCh_RandomAirStrikes <-
         {
             if (!IsLivingSurvivor(player)) continue;
             local sight = { start = where, end = player.EyePosition(), mask = 33570827, ignore = player };
-            if (!TraceLine(sight) || sight.startsolid || sight.hit) continue;
+            if (!TraceLineWithDefaults(sight) || sight.startsolid || sight.hit || sight.fraction < 1.0) continue;
             player.Stagger(where);
             QueueSpeak(player, "ChCh_AirStrikeClose", 0.0, "");
         }
