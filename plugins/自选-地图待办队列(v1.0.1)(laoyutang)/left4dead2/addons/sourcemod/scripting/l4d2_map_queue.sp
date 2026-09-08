@@ -9,7 +9,7 @@
 
 #define PLUGIN_NAME             "L4D2 Map Queue"
 #define PLUGIN_AUTHOR           "laoyutang"
-#define PLUGIN_VERSION          "1.0.0"
+#define PLUGIN_VERSION          "1.0.1"
 #define PLUGIN_DESCRIPTION      "Persistent campaign queue with votes and automatic finale changes"
 
 #define DATA_FILE               "data/l4d2_map_queue.txt"
@@ -98,6 +98,7 @@ Handle g_hSwitchTimer;
 bool g_FinaleHandled;
 bool g_IgnoreFinaleUntilMapStart;
 bool g_ShuttingDown;
+int g_MapSerial;
 
 char g_GameMode[64];
 char g_DataPath[PLATFORM_MAX_PATH];
@@ -224,6 +225,10 @@ public void OnMapStart()
 
 public void OnMapEnd()
 {
+	// SourceMod fires OnClientDisconnect for connected clients during level
+	// shutdown before OnMapEnd. Invalidate empty-server checks from that map.
+	g_MapSerial++;
+
 	delete g_hSwitchTimer;
 
 	if (g_State == QueueState_Delay && g_hAdvanceTimer != null)
@@ -240,12 +245,15 @@ public void OnClientDisconnect(int client)
 	if (!IsFakeClient(client))
 	{
 		g_MenuMission[client][0] = '\0';
-		RequestFrame(Frame_CheckForEmptyServer);
+		RequestFrame(Frame_CheckForEmptyServer, g_MapSerial);
 	}
 }
 
 void Frame_CheckForEmptyServer(any data)
 {
+	if (data != g_MapSerial)
+		return;
+
 	if (!g_ShuttingDown && IsAutomationActive() && CountHumanPlayers() == 0)
 		StopForEmptyServer();
 }
