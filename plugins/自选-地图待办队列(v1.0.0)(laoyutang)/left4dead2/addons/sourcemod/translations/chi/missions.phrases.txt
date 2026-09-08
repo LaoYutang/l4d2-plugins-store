@@ -1,0 +1,779 @@
+"Phrases"
+{
+	"L4D2C1"
+	{
+		"chi"		"死亡中心"
+	}
+	"L4D2C2"
+	{
+		"chi"		"黑色狂欢节"
+	}
+	"L4D2C3"
+	{
+		"chi"		"沼泽激战"
+	}
+	"L4D2C4"
+	{
+		"chi"		"暴风骤雨"
+	}
+	"L4D2C5"
+	{
+		"chi"		"教区"
+	}
+	"L4D2C6"
+	{
+		"chi"		"短暂时刻"
+	}
+	"L4D2C7"
+	{
+		"chi"		"牺牲"
+	}
+	"L4D2C8"
+	{
+		"chi"		"毫不留情"
+	}
+	"L4D2C9"
+	{
+		"chi"		"坠机险途"
+	}
+	"L4D2C10"
+	{
+		"chi"		"死亡丧钟"
+	}
+	"L4D2C11"
+	{
+		"chi"		"静寂时分"
+	}
+	"L4D2C12"
+	{
+		"chi"		"血腥收获"
+	}
+	"L4D2C13"
+	{
+		"chi"		"刺骨寒溪"
+	}
+	"L4D2C14"
+	{
+		"chi"		"临死一搏"
+	}
+	"prodeus"
+	{
+		"chi"		"Prodeus Requiem"
+	}
+	"prague"
+	{
+		"chi"		"Prague"
+	}
+	"neonprime"
+	{
+		"chi"		"Neon Prime 2069"
+	}
+	"contraz"
+	{
+		"chi"		"ContraZ"
+	}
+	"GuangXiNanning"
+	{
+		"chi"		"广西-南宁 V1.15.1"
+	}
+	"mapaliminal"
+	{
+		"chi"		"Anemoia"
+	}
+	"jiangmenzhiyuan"
+	{
+		"chi"		"江门职院正式版v1.3"
+	}
+	"damitcomplete"
+	{
+		"chi"		"Dam It Complete L4D2"
+	}
+	"dbd2dcfix"
+	{
+		"chi"		"Dead Before Dawn DC Fixed Version"
+	}
+	"DeathSummit"
+	{
+		"chi"		"Death Summit"
+	}
+	"dune"
+	{
+		"chi"		"Vox Aeterna"
+	}
+	"LockdownChapterTwoDLC"
+	{
+		"chi"		"Lockdown: Chapter Two DLC"
+	}
+	"KimchiZomie2"
+	{
+		"chi"		"KimchiZombie2"
+	}
+	"noechoremastered"
+	{
+		"chi"		"音讯全无重制版(No Echo RE)"
+	}
+	"ttcdt"
+	{
+		"chi"		"The Tsunami City:Dark Tide v1.6"
+	}
+	"DayBreak"
+	{
+		"chi"		"Day Break"
+	}
+	"yomimario2"
+	{
+		"chi"		"Left 4 Mario"
+	}
+	"JourneyToSplashMountain"
+	{
+		"chi"		"Journey to Splash Mountain"
+	}
+	"Diescraper362"
+	{
+		"chi"		"Diescraper Redux 3.62"
+	}
+	"Diescraper362VS"
+	{
+		"chi"		"Diescraper Redux 3.62"
+	}
+	"Airconditioner"
+	{
+		"chi"		"Air Conditioner 01"
+	}
+	"CrashBandicootL4D2"
+	{
+		"chi"		"Crash Bandicoot: Left 4 Dead 2 (2020)"
+	}
+	"ihatemountains2"
+	{
+		"chi"		"I Hate Mountains 2 (1.5)"
+	}
+	"Highway17L4D2"
+	{
+		"chi"		"Half-Life 2: Highway 17(L4D2)"
+	}
+	"fosremake"
+	{
+		"chi"		"FOS_RE(生还之锋-重制版)"
+	}
+	"shenmiyingdi"
+	{
+		"chi"		"神秘营地"
+	}
+	"MissionImprobable"
+	{
+		"chi"		"Mission Improbable 1.4"
+	}
+	"exMala"
+	{
+		"chi"		"Escape from Malabar v7"
+	}
+	"AlternativePerspectives"
+	{
+		"chi"		"Alternative Perspectives"
+	}
+	"shuizhicheng"
+	{
+		"chi"		"水之城"
+	}
+	"buenosaires2"
+	{
+		"chi"		"Cambalache 2 - Buenos Aires"
+	}
+	"buenosaires"
+	{
+		"chi"		"Cambalache - Buenos Aires"
+	}
+	"Northchaos"
+	{
+		"chi"		"North Chaos"
+	}
+	"wildride"
+	{
+		"chi"		"Wild Ride"
+	}
+	"QuestionableEthicsRemake"
+	{
+		"chi"		"Questionable Ethics Remake (v1.1)"
+	}
+	"nomercyapocn"
+	{
+		"chi"		"No Mercy APOCALYPSE 2024"
+	}
+	"metalslug54level"
+	{
+		"chi"		"metalslug5(4level)"
+	}
+	"adammissionfixed"
+	{
+		"chi"		"A Dam Mission Fixed"
+	}
+	"DevilMountain"
+	{
+		"chi"		"Devil Mountain"
+	}
+	"FarewellChenming"
+	{
+		"chi"		"Farewell Chenming"
+	}
+	"Lego"
+	{
+		"chi"		"Lego"
+	}
+	"nightterror"
+	{
+		"chi"		"Night Terror"
+	}
+	"suicideblitz2"
+	{
+		"chi"		"Suicide Blitz 2"
+	}
+	"WhiteForest"
+	{
+		"chi"		"White Forest"
+	}
+	"Landofoblivio"
+	{
+		"chi"		"遗忘之地"
+	}
+	"BloodTracks"
+	{
+		"chi"		"Blood Tracks"
+	}
+	"infernocity"
+	{
+		"chi"		"Inferno City"
+	}
+	"CapeMurder"
+	{
+		"chi"		"海角杀戮"
+	}
+	"Zengchengcity"
+	{
+		"chi"		"广州增城"
+	}
+	"4sidedcoin"
+	{
+		"chi"		"4 Sided Coin"
+	}
+	"7HoursLaterII"
+	{
+		"chi"		"7 Hours Later II"
+	}
+	"LeftinChina"
+	{
+		"chi"		"LeftinChina"
+	}
+	"LeftinChinal4d2"
+	{
+		"chi"		"LeftinChinal4d2"
+	}
+	"behind"
+	{
+		"chi"		"Left Behind"
+	}
+	"BlackoutBasement"
+	{
+		"chi"		"Blackout Basement"
+	}
+	"DayAfter"
+	{
+		"chi"		"The Dayafter"
+	}
+	"DowntimeDine"
+	{
+		"chi"		"Downtown Dine"
+	}
+	"FreezingDCKHMC"
+	{
+		"chi"		"Freezing Point: Director's Cut"
+	}
+	"NMRIHAnxiety"
+	{
+		"chi"		"NMRIH: Anxiety"
+	}
+	"Pasiri"
+	{
+		"chi"		"Pasiri"
+	}
+	"precinct84l4d2"
+	{
+		"chi"		"Precinct 84 (2018)"
+	}
+	"undeadzone"
+	{
+		"chi"		"The Undead Zone"
+	}
+	"waerjili"
+	{
+		"chi"		"瓦尔基里"
+	}
+	"One4Nine"
+	{
+		"chi"		"One 4 Nine"
+	}
+	"heavencanwait2"
+	{
+		"chi"		"Heaven Can Wait II"
+	}
+	"BlackMesa"
+	{
+		"chi"		"Black Mesa"
+	}
+	"drdegov21"
+	{
+		"chi"		"drop dead gorges v2.1"
+	}
+	"echo"
+	{
+		"chi"		"Dead Echo 2"
+	}
+	"nkts"
+	{
+		"chi"		"Neo Tokyo  Kshatriya"
+	}
+	"graveoutdoors"
+	{
+		"chi"		"The Grave Outdoors"
+	}
+	"infectionoverdrive"
+	{
+		"chi"		"Infection Overdrive"
+	}
+	"EFV"
+	{
+		"chi"		"Escape From Valencia v2"
+	}
+	"riptide"
+	{
+		"chi"		"Riptide"
+	}
+	"ggsmi"
+	{
+		"chi"		"Shadow Moses Island"
+	}
+	"symbyosysv12"
+	{
+		"chi"		"SymbyosysV12"
+	}
+	"templeruins"
+	{
+		"chi"		"Temple Ruins"
+	}
+	"bjrtc2"
+	{
+		"chi"		"The Hazing"
+	}
+	"VC1ub5"
+	{
+		"chi"		"Vienna Calling 1"
+	}
+	"WelcometoHell"
+	{
+		"chi"		"Welcome to Hell"
+	}
+	"Chernobyl"
+	{
+		"chi"		"Chernobyl: Chapter One"
+	}
+	"efcy"
+	{
+		"chi"		"Escape From Castle Yhy"
+	}
+	"beyonddead"
+	{
+		"chi"		"Beyond Dead"
+	}
+	"detourahead"
+	{
+		"chi"		"$DetourAhead_Title"
+	}
+	"drmalroy"
+	{
+		"chi"		"Dr. Malroy's Laboratory"
+	}
+	"goldeneye4dead"
+	{
+		"chi"		"GoldenEye 4 Dead Fixed"
+	}
+	"LeftorRight"
+	{
+		"chi"		"Left or Right"
+	}
+	"RMSTitanic"
+	{
+		"chi"		"RMS Titanic"
+	}
+	"roadtof18"
+	{
+		"chi"		"Road To F18"
+	}
+	"SBTDTWO"
+	{
+		"chi"		"Surrounded by the Dead II"
+	}
+	"ZELDEN0102"
+	{
+		"chi"		"ZELDEN level 1 and 2"
+	}
+	"tientsin"
+	{
+		"chi"		"Tientsin(Beta)"
+	}
+	"TheEvilWithin"
+	{
+		"chi"		"The Evil Within"
+	}
+	"ZEAethership"
+	{
+		"chi"		"Escape: Aethership"
+	}
+	"Outline"
+	{
+		"chi"		"Outline"
+	}
+	"tgtneighborhood"
+	{
+		"chi"		"There Goes The Neighborhood"
+	}
+	"drmalroysabsolution"
+	{
+		"chi"		"Dr. Malroy's Absolution"
+	}
+	"l4d1malroysabsolution"
+	{
+		"chi"		"Dr. Malroy's Absolution (L4D1)"
+	}
+	"Prison"
+	{
+		"chi"		"Prison Break"
+	}
+	"2019"
+	{
+		"chi"		"2019 (Anniversary Edition)"
+	}
+	"AmidTheRuinsalpha"
+	{
+		"chi"		"Amid The Ruins Alpha"
+	}
+	"ChasingThePeace"
+	{
+		"chi"		"Chasing the peace"
+	}
+	"distrito"
+	{
+		"chi"		"DIZTRITO(Peru)"
+	}
+	"deadfallremake"
+	{
+		"chi"		"死亡陨落：重制版 (Dead Fall: Remake)"
+	}
+	"Draxmap2"
+	{
+		"chi"		"Death Strip"
+	}
+	"DevCastleMission"
+	{
+		"chi"		"Dev Castle"
+	}
+	"shit"
+	{
+		"chi"		"Escape of the crap box"
+	}
+	"ExecutionExhibit"
+	{
+		"chi"		"Execution Exhibit"
+	}
+	"graveconsequences"
+	{
+		"chi"		"Grave Consequences"
+	}
+	"grayworldmissionfileohyeahletsgooyes"
+	{
+		"chi"		"Gray World"
+	}
+	"Greyscale"
+	{
+		"chi"		"Grey Scale"
+	}
+	"InTooDeepExtended"
+	{
+		"chi"		"InTooDeepExtended"
+	}
+	"OhioPlace"
+	{
+		"chi"		"Journey Through Ohio"
+	}
+	"besagashmission"
+	{
+		"chi"		"Бесагаш-ауылы"
+	}
+	"lost4dead"
+	{
+		"chi"		"Lost and Damned"
+	}
+	"NoContiniuity"
+	{
+		"chi"		"No Continuity"
+	}
+	"AfterDark"
+	{
+		"chi"		"天黑之后 After Dark"
+	}
+	"CarriedOff"
+	{
+		"chi"		"Carried Off"
+	}
+	"CedaFever"
+	{
+		"chi"		"CEDA Fever"
+	}
+	"darkblood2"
+	{
+		"chi"		"Dark Blood 2"
+	}
+	"DFB2RebornV1"
+	{
+		"chi"		"Dead Flag Blues 2: Reborn"
+	}
+	"ddntr1"
+	{
+		"chi"		"Deadenator"
+	}
+	"DDCW"
+	{
+		"chi"		"Deadly Dispatch (v3)"
+	}
+	"DeadSeries"
+	{
+		"chi"		"DeadSeries"
+	}
+	"deathsummer"
+	{
+		"chi"		"Death Summer"
+	}
+	"DeathWoods"
+	{
+		"chi"		"Death Woods"
+	}
+	"derailed"
+	{
+		"chi"		"derailed (v5)"
+	}
+	"Escansion"
+	{
+		"chi"		"Escansion"
+	}
+	"Fake"
+	{
+		"chi"		"Fake"
+	}
+	"fallenport"
+	{
+		"chi"		"Fallen"
+	}
+	"GasFever"
+	{
+		"chi"		"Gas fever (2.0)"
+	}
+	"hopeless"
+	{
+		"chi"		"Hopeless"
+	}
+	"InfectedCity"
+	{
+		"chi"		"Infected City"
+	}
+	"infectedtown"
+	{
+		"chi"		"Infected Town Fixed"
+	}
+	"DeathStopL4D2"
+	{
+		"chi"		"Death Stop L4D2"
+	}
+	"PlanBv051"
+	{
+		"chi"		"Plan B [Beta 0.51]"
+	}
+	"Unsdwn"
+	{
+		"chi"		"Undead Smackdown"
+	}
+	"BlackMesaUndertow"
+	{
+		"chi"		"Black Mesa: Undertow"
+	}
+	"LastBaktun"
+	{
+		"chi"		"Last Baktun"
+	}
+	"lboh"
+	{
+		"chi"		"Let's Build Our Hideaway"
+	}
+	"LeftTurnSilentHill3"
+	{
+		"chi"		"Left Turn Silent Hill 3"
+	}
+	"BloodProof"
+	{
+		"chi"		"Blood Proof"
+	}
+	"NapalmDeath"
+	{
+		"chi"		"Napalm Death"
+	}
+	"KokiriForest"
+	{
+		"chi"		"Kokiri Forest"
+	}
+	"OpenRoadICSX"
+	{
+		"chi"		"Open Road"
+	}
+	"RedTide"
+	{
+		"chi"		"Red Tide"
+	}
+	"thepyramidtestmission"
+	{
+		"chi"		"tony time 2"
+	}
+	"urbanflight"
+	{
+		"chi"		"Urban Flight"
+	}
+	"zmb13"
+	{
+		"chi"		"ZMB-13"
+	}
+	"wanli"
+	{
+		"chi"		"Wan Li"
+	}
+	"summer01"
+	{
+		"chi"		"停留在彼岸的夏天 V3.1"
+	}
+	"PitStopWinterRemix"
+	{
+		"chi"		"Pit Stop Winter Remix"
+	}
+	"hellstorm"
+	{
+		"chi"		"Hellstorm 2"
+	}
+	"Powerstation"
+	{
+		"chi"		"Powerstation"
+	}
+	"tthreehdr"
+	{
+		"chi"		"Helms Deep Reborn v.23"
+	}
+	"HellRide"
+	{
+		"chi"		"HellRide V1.1"
+	}
+	"crashapoc"
+	{
+		"chi"		"Crash Course APOCALYPSE"
+	}
+	"Venissia"
+	{
+		"chi"		"Venissia"
+	}
+	"GoingBallistic"
+	{
+		"chi"		"导弹来袭"
+	}
+	"TheReturnEFL"
+	{
+		"chi"		"The Return: Escape from Louisianna"
+	}
+	"IHC"
+	{
+		"chi"		"I Hate Chargers"
+	}
+	"OrangeOnslaught"
+	{
+		"chi"		"Orange Onslaught"
+	}
+	"deathtollapoc"
+	{
+		"chi"		"Death Toll APOCALYPSE"
+	}
+	"TimeKHMC"
+	{
+		"chi"		"Time to Die"
+	}
+	"raccoon"
+	{
+		"chi"		"Raccoon City Nemesis"
+	}
+	"ShoreRescue"
+	{
+		"chi"		"Shore Rescue"
+	}
+	"burningnight"
+	{
+		"chi"		"Burning Night Fixed"
+	}
+	"25toLife"
+	{
+		"chi"		"25 to Life"
+	}
+	"lastcall"
+	{
+		"chi"		"Last Call"
+	}
+	"Moscow"
+	{
+		"chi"		"Moscow"
+	}
+	"bloodhospital"
+	{
+		"chi"		"Blood Hospital 2"
+	}
+	"bloodwoods"
+	{
+		"chi"		"Blood Woods APOCALYPSE"
+	}
+	"UnforgottenDay"
+	{
+		"chi"		"UnforgottenDay"
+	}
+	"whispersbeyondthewind"
+	{
+		"chi"		"Whispers Beyond The Wind"
+	}
+	"AtrocityValley"
+	{
+		"chi"		"Atrocity Valley"
+	}
+	"coldfront"
+	{
+		"chi"		"Cold Front"
+	}
+	"darkwood"
+	{
+		"chi"		"Dark Wood"
+	}
+	"energycrisis"
+	{
+		"chi"		"Energy Crisis"
+	}
+	"re3short"
+	{
+		"chi"		"Resident Evil 3 Short and Versus"
+	}
+	"BuriedDeep"
+	{
+		"chi"		"Buried Deep"
+	}
+	"Zengcheng"
+	{
+		"chi"		"广州增城Fv5.12"
+	}
+}
