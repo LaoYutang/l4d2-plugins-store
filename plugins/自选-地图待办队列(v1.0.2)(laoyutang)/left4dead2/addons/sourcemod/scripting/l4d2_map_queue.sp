@@ -9,7 +9,7 @@
 
 #define PLUGIN_NAME             "L4D2 Map Queue"
 #define PLUGIN_AUTHOR           "laoyutang"
-#define PLUGIN_VERSION          "1.0.1"
+#define PLUGIN_VERSION          "1.0.2"
 #define PLUGIN_DESCRIPTION      "Persistent campaign queue with votes and automatic finale changes"
 
 #define DATA_FILE               "data/l4d2_map_queue.txt"
@@ -25,7 +25,8 @@ enum QueueState
 	QueueState_Stopped = 0,
 	QueueState_Armed,
 	QueueState_Running,
-	QueueState_Delay
+	QueueState_Delay,
+	QueueState_Paused
 };
 
 enum QueueOperation
@@ -37,6 +38,7 @@ enum QueueOperation
 	QueueOperation_Clear,
 	QueueOperation_Run,
 	QueueOperation_RunAfter,
+	QueueOperation_Pause,
 	QueueOperation_Skip
 };
 
@@ -157,7 +159,7 @@ public void OnPluginStart()
 		g_cvGameMode.GetString(g_GameMode, sizeof(g_GameMode));
 	}
 
-	RegConsoleCmd("sm_mq", Command_MapQueue, "sm_mq <status|add|addfront|list|remove|clear|run|runafter|skip>");
+	RegConsoleCmd("sm_mq", Command_MapQueue, "sm_mq <status|add|addfront|list|remove|clear|run|runafter|pause|skip>");
 
 	HookEvent("finale_win", Event_FinaleWin, EventHookMode_Pre);
 	HookEvent("finale_vehicle_leaving", Event_FinaleVehicleLeaving, EventHookMode_Pre);
@@ -348,6 +350,8 @@ QueueOperation ParseOperation(const char[] subcommand)
 		return QueueOperation_Run;
 	if (StrEqual(subcommand, "runafter", false))
 		return QueueOperation_RunAfter;
+	if (StrEqual(subcommand, "pause", false))
+		return QueueOperation_Pause;
 	if (StrEqual(subcommand, "skip", false))
 		return QueueOperation_Skip;
 	return QueueOperation_None;
@@ -407,7 +411,7 @@ bool BuildOperationArgs(int firstArg, int lastArg, char[] output, int outputLeng
 
 void PrintUsage(int client)
 {
-	ReplyToCommand(client, "[MapQueue] sm_mq <status|add|addfront|list|remove|clear|run|runafter|skip>");
+	ReplyToCommand(client, "[MapQueue] sm_mq <status|add|addfront|list|remove|clear|run|runafter|pause|skip>");
 }
 
 void ShowStatus(int client)
@@ -622,6 +626,15 @@ bool ValidateOperation(QueueOperation operation, const char[] operationArgs, cha
 				strcopy(error, errorLength, "队列正在执行。");
 				return false;
 			}
+			if (g_State == QueueState_Paused)
+			{
+				if (!g_HasActive)
+				{
+					strcopy(error, errorLength, "暂停状态缺少当前执行项，无法恢复。");
+					return false;
+				}
+				return CanStartAutomation(error, errorLength);
+			}
 			if (g_Queue.Length == 0)
 			{
 				strcopy(error, errorLength, "待执行列表为空。");
@@ -638,7 +651,10 @@ bool ValidateOperation(QueueOperation operation, const char[] operationArgs, cha
 		{
 			if (g_State != QueueState_Stopped)
 			{
-				strcopy(error, errorLength, "队列已经在执行或等待。");
+				if (g_State == QueueState_Paused)
+					strcopy(error, errorLength, "队列已经暂停；请使用 run 恢复当前战役的连续执行。");
+				else
+					strcopy(error, errorLength, "队列已经在执行或等待。");
 				return false;
 			}
 			if (g_Queue.Length == 0)
@@ -648,6 +664,19 @@ bool ValidateOperation(QueueOperation operation, const char[] operationArgs, cha
 			}
 			if (!CanStartAutomation(error, errorLength))
 				return false;
+		}
+		case QueueOperation_Pause:
+		{
+			if (g_State == QueueState_Stopped)
+			{
+				strcopy(error, errorLength, "队列当前没有运行或等待。");
+				return false;
+			}
+			if (g_State == QueueState_Paused)
+			{
+				strcopy(error, errorLength, "队列已经暂停。");
+				return false;
+			}
 		}
 		case QueueOperation_Skip:
 		{
@@ -761,6 +790,7 @@ void GetOperationVoteTitle(QueueOperation operation, char[] output, int outputLe
 		case QueueOperation_Clear: strcopy(output, outputLength, "清空地图待办");
 		case QueueOperation_Run: strcopy(output, outputLength, "立即执行地图待办");
 		case QueueOperation_RunAfter: strcopy(output, outputLength, "本战役通关后执行待办");
+		case QueueOperation_Pause: strcopy(output, outputLength, "暂停地图待办");
 		case QueueOperation_Skip: strcopy(output, outputLength, "跳过当前待办地图");
 		default: strcopy(output, outputLength, "修改地图待办");
 	}
@@ -789,6 +819,8 @@ bool ExecuteOperation(QueueOperation operation, const char[] operationArgs, char
 			return ExecuteRun(result, resultLength);
 		case QueueOperation_RunAfter:
 			return ExecuteRunAfter(result, resultLength);
+		case QueueOperation_Pause:
+			return ExecutePause(result, resultLength);
 		case QueueOperation_Skip:
 			return ExecuteSkip(result, resultLength);
 	}
@@ -895,6 +927,20 @@ bool ExecuteClear(char[] result, int resultLength)
 
 bool ExecuteRun(char[] result, int resultLength)
 {
+	if (g_State == QueueState_Paused && g_HasActive)
+	{
+		QueueSnapshot pausedSnapshot;
+		TakeQueueSnapshot(pausedSnapshot);
+		g_State = QueueState_Running;
+
+		if (!CommitQueueMutation(pausedSnapshot, result, resultLength))
+			return false;
+
+		SyncMapChangerControl();
+		strcopy(result, resultLength, "队列已恢复，当前战役通关后将继续下一项。");
+		return true;
+	}
+
 	MapEntry resolved;
 	char error[256];
 	if (!ResolvePendingHead(resolved, error, sizeof(error)))
@@ -938,6 +984,44 @@ bool ExecuteRunAfter(char[] result, int resultLength)
 	return true;
 }
 
+bool ExecutePause(char[] result, int resultLength)
+{
+	QueueSnapshot snapshot;
+	TakeQueueSnapshot(snapshot);
+
+	bool currentContinues = g_State == QueueState_Running && g_HasActive;
+	bool switchNotStarted = currentContinues && g_hSwitchTimer != null;
+	if (switchNotStarted)
+	{
+		RequeueActiveInMemory();
+		g_State = QueueState_Stopped;
+	}
+	else if (currentContinues)
+	{
+		g_State = QueueState_Paused;
+	}
+	else
+	{
+		g_State = QueueState_Stopped;
+	}
+
+	if (!CommitQueueMutation(snapshot, result, resultLength))
+		return false;
+
+	CancelAllTimers();
+	if (g_State != QueueState_Paused)
+		g_IgnoreFinaleUntilMapStart = false;
+	SyncMapChangerControl();
+
+	if (switchNotStarted)
+		strcopy(result, resultLength, "队列已暂停；尚未进入的当前项已放回队首。");
+	else if (currentContinues)
+		strcopy(result, resultLength, "队列已暂停；当前战役继续，通关后不会进入下一项。");
+	else
+		strcopy(result, resultLength, "队列已暂停；后续待办已保留。");
+	return true;
+}
+
 bool ExecuteSkip(char[] result, int resultLength)
 {
 	QueueSnapshot snapshot;
@@ -947,12 +1031,15 @@ bool ExecuteSkip(char[] result, int resultLength)
 	bool startNext;
 	bool nextInvalid;
 
-	if (g_State == QueueState_Running && g_HasActive)
+	if ((g_State == QueueState_Running || g_State == QueueState_Paused) && g_HasActive)
 	{
+		bool wasPaused = g_State == QueueState_Paused;
 		strcopy(skipped, sizeof(skipped), g_Active.map);
 		g_HasActive = false;
 		ClearMapEntry(g_Active);
-		if (g_Queue.Length > 0)
+		if (wasPaused)
+			g_State = QueueState_Stopped;
+		else if (g_Queue.Length > 0)
 			startNext = PrepareNextActive(nextInvalid);
 		else
 			g_State = QueueState_Stopped;
@@ -1076,21 +1163,25 @@ void TryCompleteCampaign()
 		return;
 	if (!IsSupportedMode() || !L4D_IsMissionFinalMap())
 		return;
-	if (g_State != QueueState_Running && g_State != QueueState_Armed)
+	if (g_State != QueueState_Running && g_State != QueueState_Armed && g_State != QueueState_Paused)
 		return;
 
 	g_FinaleHandled = true;
+	bool wasPaused = g_State == QueueState_Paused;
 
 	QueueSnapshot snapshot;
 	TakeQueueSnapshot(snapshot);
 
-	if (g_State == QueueState_Running)
+	if (g_State == QueueState_Running || g_State == QueueState_Paused)
 	{
 		g_HasActive = false;
 		ClearMapEntry(g_Active);
 	}
 
-	g_State = g_Queue.Length > 0 ? QueueState_Delay : QueueState_Stopped;
+	if (wasPaused)
+		g_State = QueueState_Stopped;
+	else
+		g_State = g_Queue.Length > 0 ? QueueState_Delay : QueueState_Stopped;
 
 	char error[256];
 	if (!CommitQueueMutation(snapshot, error, sizeof(error)))
@@ -1100,6 +1191,15 @@ void TryCompleteCampaign()
 		g_State = QueueState_Stopped;
 		CancelAllTimers();
 		SyncMapChangerControl();
+		return;
+	}
+
+	if (wasPaused)
+	{
+		CancelAllTimers();
+		g_IgnoreFinaleUntilMapStart = false;
+		SyncMapChangerControl();
+		PrintToChatAll("\x04[地图待办]\x01 当前战役已完成，后续待办保持暂停。");
 		return;
 	}
 
@@ -1237,6 +1337,7 @@ void GetQueueStateName(QueueState state, char[] output, int outputLength)
 		case QueueState_Armed: strcopy(output, outputLength, "armed");
 		case QueueState_Running: strcopy(output, outputLength, "running");
 		case QueueState_Delay: strcopy(output, outputLength, "delay");
+		case QueueState_Paused: strcopy(output, outputLength, "paused");
 		default: strcopy(output, outputLength, "unknown");
 	}
 }
@@ -1938,10 +2039,15 @@ void RemoveMapChangerHooks()
 
 void SyncMapChangerControl()
 {
-	if (IsAutomationActive() && g_cvEnable.BoolValue)
+	if (ShouldControlMapChanger() && g_cvEnable.BoolValue)
 		AcquireMapChangerControl();
 	else
 		ReleaseMapChangerControl();
+}
+
+bool ShouldControlMapChanger()
+{
+	return g_State == QueueState_Armed || g_State == QueueState_Running || g_State == QueueState_Delay;
 }
 
 void AcquireMapChangerControl()
