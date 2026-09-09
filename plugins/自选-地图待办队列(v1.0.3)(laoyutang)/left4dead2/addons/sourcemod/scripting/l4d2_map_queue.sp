@@ -9,7 +9,7 @@
 
 #define PLUGIN_NAME             "L4D2 Map Queue"
 #define PLUGIN_AUTHOR           "laoyutang"
-#define PLUGIN_VERSION          "1.0.2"
+#define PLUGIN_VERSION          "1.0.3"
 #define PLUGIN_DESCRIPTION      "Persistent campaign queue with votes and automatic finale changes"
 
 #define DATA_FILE               "data/l4d2_map_queue.txt"
@@ -100,6 +100,7 @@ Handle g_hSwitchTimer;
 bool g_FinaleHandled;
 bool g_IgnoreFinaleUntilMapStart;
 bool g_ShuttingDown;
+bool g_Initialized;
 int g_MapSerial;
 
 char g_GameMode[64];
@@ -165,13 +166,14 @@ public void OnPluginStart()
 	HookEvent("finale_vehicle_leaving", Event_FinaleVehicleLeaving, EventHookMode_Pre);
 
 	AutoExecConfig(true, "l4d2_map_queue");
-
-	RebuildCatalog();
-	LoadQueueState();
 }
 
 public void OnAllPluginsLoaded()
 {
+	RebuildCatalog();
+	LoadQueueState();
+	g_Initialized = true;
+
 	RefreshMapChangerConVars();
 	SyncMapChangerControl();
 }
@@ -181,7 +183,7 @@ public void OnPluginEnd()
 	g_ShuttingDown = true;
 	CancelAllTimers();
 
-	if (g_Queue != null)
+	if (g_Initialized && g_Queue != null)
 	{
 		RequeueActiveInMemory();
 		g_State = QueueState_Stopped;
@@ -209,6 +211,9 @@ public void OnLibraryRemoved(const char[] name)
 public void OnConfigsExecuted()
 {
 	RefreshGameMode();
+	if (!g_Initialized)
+		return;
+
 	RebuildCatalog();
 	SyncMapChangerControl();
 }
@@ -218,6 +223,9 @@ public void OnMapStart()
 	g_FinaleHandled = false;
 	g_IgnoreFinaleUntilMapStart = false;
 	RefreshGameMode();
+	if (!g_Initialized)
+		return;
+
 	RebuildCatalog();
 	if (IsAutomationActive() && !IsSupportedMode())
 		StopAndRequeueActive("当前模式不属于合作战役，地图待办已停止。");
@@ -276,6 +284,11 @@ Action Command_MapQueue(int client, int args)
 {
 	if (client > 0 && (!IsClientInGame(client) || IsFakeClient(client)))
 		return Plugin_Handled;
+	if (!g_Initialized)
+	{
+		ReplyToCommand(client, "[MapQueue] 插件仍在初始化，请稍后重试。");
+		return Plugin_Handled;
+	}
 
 	if (args == 0)
 	{
@@ -1351,6 +1364,9 @@ void Cvar_EnableChanged(ConVar convar, const char[] oldValue, const char[] newVa
 void Cvar_GameModeChanged(ConVar convar, const char[] oldValue, const char[] newValue)
 {
 	strcopy(g_GameMode, sizeof(g_GameMode), newValue);
+	if (!g_Initialized)
+		return;
+
 	RebuildCatalog();
 	RequestFrame(Frame_CheckGameMode);
 }
