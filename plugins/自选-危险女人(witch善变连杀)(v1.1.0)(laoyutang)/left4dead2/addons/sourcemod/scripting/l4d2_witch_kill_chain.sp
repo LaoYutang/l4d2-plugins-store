@@ -5,7 +5,7 @@
 #include <sdktools>
 #include <sdkhooks>
 
-#define PLUGIN_VERSION             "1.0.1"
+#define PLUGIN_VERSION             "1.1.0"
 #define PLUGIN_CONFIG              "l4d2_witch_kill_chain"
 
 #define TEAM_SURVIVOR              2
@@ -19,12 +19,14 @@
 ConVar g_cvEnable;
 ConVar g_cvInterval;
 ConVar g_cvRandom;
+ConVar g_cvIncapHealth;
 ConVar g_cvBurnTime;
 
 bool g_bEnabled;
 bool g_bRandom;
 bool g_bUnsafeIntervalWarned;
 float g_fInterval;
+int g_iIncapHealth;
 
 Handle g_hRetargetTimer[MAX_ENTITY_INDEX + 1];
 int g_iCurrentTargetSerial[MAX_ENTITY_INDEX + 1];
@@ -94,6 +96,17 @@ public void OnPluginStart()
 		1.0
 	);
 
+	g_cvIncapHealth = CreateConVar(
+		"l4d2_witch_kill_chain_incap_health",
+		"100",
+		"Witch 每次击倒生还者后回复的生命值. 0=不回血.",
+		FCVAR_NOTIFY,
+		true,
+		0.0,
+		true,
+		9999.0
+	);
+
 	g_cvBurnTime = FindConVar("z_witch_burn_time");
 	if (g_cvBurnTime == null)
 	{
@@ -104,6 +117,7 @@ public void OnPluginStart()
 	g_cvEnable.AddChangeHook(ConVarChanged_Settings);
 	g_cvInterval.AddChangeHook(ConVarChanged_Settings);
 	g_cvRandom.AddChangeHook(ConVarChanged_Settings);
+	g_cvIncapHealth.AddChangeHook(ConVarChanged_Settings);
 	g_cvBurnTime.AddChangeHook(ConVarChanged_Settings);
 
 	HookEvent("witch_spawn", Event_WitchSpawn);
@@ -231,6 +245,7 @@ public void Event_PlayerIncapacitated(Event event, const char[] name, bool dontB
 
 	if (g_bEnabled)
 	{
+		RestoreWitchHealth(witch);
 		RetargetImmediately(witch);
 	}
 }
@@ -317,6 +332,7 @@ void ReadSettings()
 	g_bEnabled = g_cvEnable.BoolValue;
 	g_bRandom = g_cvRandom.BoolValue;
 	g_fInterval = g_cvInterval.FloatValue;
+	g_iIncapHealth = g_cvIncapHealth.IntValue;
 
 	if (g_fInterval < MIN_RANDOM_INTERVAL)
 	{
@@ -326,6 +342,17 @@ void ReadSettings()
 	{
 		g_fInterval = MAX_CONFIG_INTERVAL;
 	}
+}
+
+void RestoreWitchHealth(int witch)
+{
+	if (g_iIncapHealth <= 0)
+	{
+		return;
+	}
+
+	int health = GetEntProp(witch, Prop_Data, "m_iHealth");
+	SetEntProp(witch, Prop_Data, "m_iHealth", health + g_iIncapHealth);
 }
 
 void RetargetImmediately(int witch)
