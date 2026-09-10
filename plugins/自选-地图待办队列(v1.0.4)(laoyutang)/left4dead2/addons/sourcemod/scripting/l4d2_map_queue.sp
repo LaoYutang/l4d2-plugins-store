@@ -9,7 +9,7 @@
 
 #define PLUGIN_NAME             "L4D2 Map Queue"
 #define PLUGIN_AUTHOR           "laoyutang"
-#define PLUGIN_VERSION          "1.0.3"
+#define PLUGIN_VERSION          "1.0.4"
 #define PLUGIN_DESCRIPTION      "Persistent campaign queue with votes and automatic finale changes"
 
 #define DATA_FILE               "data/l4d2_map_queue.txt"
@@ -634,10 +634,31 @@ bool ValidateOperation(QueueOperation operation, const char[] operationArgs, cha
 		}
 		case QueueOperation_Run:
 		{
-			if (g_State == QueueState_Running || g_State == QueueState_Delay)
+			if (g_State == QueueState_Delay)
 			{
 				strcopy(error, errorLength, "队列正在执行。");
 				return false;
+			}
+			if (g_State == QueueState_Running)
+			{
+				if (!g_HasActive)
+				{
+					strcopy(error, errorLength, "运行状态缺少当前执行项，无法重新切换。");
+					return false;
+				}
+				if (!CanStartAutomation(error, errorLength))
+					return false;
+
+				RebuildCatalog();
+				MapEntry active;
+				if (!ResolveMapEntry(g_Active.map, active, error, errorLength))
+					return false;
+				if (IsCurrentMapInMission(active.mission))
+				{
+					FormatEx(error, errorLength, "当前地图已经属于执行中的战役 %s，无需重新切换。", active.missionName);
+					return false;
+				}
+				return true;
 			}
 			if (g_State == QueueState_Paused)
 			{
@@ -940,6 +961,37 @@ bool ExecuteClear(char[] result, int resultLength)
 
 bool ExecuteRun(char[] result, int resultLength)
 {
+	if (g_State == QueueState_Running && g_HasActive)
+	{
+		RebuildCatalog();
+		MapEntry resolved;
+		char error[256];
+		if (!ResolveMapEntry(g_Active.map, resolved, error, sizeof(error)))
+		{
+			strcopy(result, resultLength, error);
+			return false;
+		}
+		if (IsCurrentMapInMission(resolved.mission))
+		{
+			FormatEx(result, resultLength, "当前地图已经属于执行中的战役 %s，无需重新切换。", resolved.missionName);
+			return false;
+		}
+
+		QueueSnapshot runningSnapshot;
+		TakeQueueSnapshot(runningSnapshot);
+		CopyMapEntry(resolved, g_Active);
+		if (!CommitQueueMutation(runningSnapshot, result, resultLength))
+			return false;
+
+		CancelAllTimers();
+		g_IgnoreFinaleUntilMapStart = true;
+		g_FinaleHandled = false;
+		SyncMapChangerControl();
+		ScheduleActiveMapSwitch();
+		FormatEx(result, resultLength, "当前地图不属于执行中的战役，正在切换回 %s。", g_Active.map);
+		return true;
+	}
+
 	if (g_State == QueueState_Paused && g_HasActive)
 	{
 		QueueSnapshot pausedSnapshot;
@@ -1578,6 +1630,22 @@ bool ResolveMapEntry(const char[] map, MapEntry entry, char[] error, int errorLe
 		return false;
 	}
 	return true;
+}
+
+bool IsCurrentMapInMission(const char[] mission)
+{
+	char currentMap[MAP_NAME_LENGTH];
+	GetCurrentMap(currentMap, sizeof(currentMap));
+	TrimString(currentMap);
+	StringToLower(currentMap);
+
+	int index;
+	if (!g_MapIndex.GetValue(currentMap, index) || index < 0)
+		return false;
+
+	MapEntry current;
+	g_Catalog.GetArray(index, current);
+	return StrEqual(current.mission, mission, false);
 }
 
 bool IsMapInstalled(const char[] map)
