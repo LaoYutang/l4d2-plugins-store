@@ -18,7 +18,7 @@ public Plugin myinfo =
 	name 			= "Ai_Jockey增强",
 	author 			= "Breezy，High Cookie，Standalone，Newteee，cravenge，Harry，Sorallll，PaimonQwQ，夜羽真白, 东",
 	description 	= "觉得Ai猴子太弱了？ Try this！",
-	version 		= "2022/11/1",
+	version 		= "1.0",
 	url 			= "https://github.com/fantasylidong/CompetitiveWithAnne"
 }
 
@@ -42,10 +42,10 @@ bool g_bHasBeenShoved[MAXPLAYERS + 1], g_bCanLeap[MAXPLAYERS + 1];
 
 public void OnPluginStart()
 {
-	g_hBhopSpeed = CreateConVar("ai_JockeyBhopSpeed", "80.0", "Jockey连跳的速度", FCVAR_NONE, true, 0.0);
-	g_hStartHopDistance = CreateConVar("ai_JockeyStartHopDistance", "800.0", "Jockey距离生还者多少距离开始主动连跳", FCVAR_NONE, true, 0.0);
-	g_hJockeyStumbleRadius = CreateConVar("ai_JockeyStumbleRadius", "50.0", "Jockey骑到人后会对多少范围内的生还者产生硬直效果", FCVAR_NONE, true, 0.0);
-	g_hJockeyAirAngles = CreateConVar("ai_JockeyAirAngles", "60.0", "Jockey的速度方向与到目标的向量方向的距离大于这个角度，改变方向", FCVAR_NONE, true, 0.0, true, 180.0);
+	g_hBhopSpeed = CreateConVar("anne_ai_jockey_bhop_speed", "80.0", "Jockey连跳的速度", FCVAR_NONE, true, 0.0);
+	g_hStartHopDistance = CreateConVar("anne_ai_jockey_start_hop_distance", "800.0", "Jockey距离生还者多少距离开始主动连跳", FCVAR_NONE, true, 0.0);
+	g_hJockeyStumbleRadius = CreateConVar("anne_ai_jockey_stumble_radius", "50.0", "Jockey骑到人后会对多少范围内的生还者产生硬直效果", FCVAR_NONE, true, 0.0);
+	g_hJockeyAirAngles = CreateConVar("anne_ai_jockey_air_angles", "60.0", "Jockey的速度方向与到目标的向量方向的距离大于这个角度，改变方向", FCVAR_NONE, true, 0.0, true, 180.0);
 	g_hJockeyLeapRange =		FindConVar("z_jockey_leap_range");
 	g_hJockeyLeapAgain =		FindConVar("z_jockey_leap_again_timer");
 	g_hJockeyLeapTime =		FindConVar("z_jockey_leap_time");

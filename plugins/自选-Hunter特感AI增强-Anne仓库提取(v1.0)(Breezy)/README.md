@@ -22,7 +22,7 @@
 - 上游路径：`addons/sourcemod/scripting/optional/AnneHappy/ai_hunter_new.sp`
 - 提取基线：Anne 仓库提交 `607fb78e730847191d42be050b5ed0113fcc6704`
 
-本条目保留 Anne 仓库中的 AI 逻辑和原作者信息。商店适配仅增加 `AutoExecConfig(true, "ai_hunter_new")` 和标准自动配置文件，并使用 SourceMod `1.11.0.6968` 重新编译。
+本条目保留 Anne 仓库中的 AI 逻辑和原作者信息。商店适配增加了 `AutoExecConfig(true, "ai_hunter_new")` 和标准自动配置文件，并将插件自建 ConVar 统一放入 `anne_ai_hunter_*` 命名空间，以避免和 `AI_HardSI` 等插件注册同名变量；最后使用 SourceMod `1.11.0.6968` 重新编译。
 
 ## 依赖
 
@@ -42,16 +42,17 @@
 
 配置项如下：
 
-- `ai_fast_pounce_proximity "1000.0"`：距离最近生还者多近时开始快速扑击。
-- `ai_pounce_vertical_angle "7.0"`：限制 Hunter 扑击的垂直角度。
-- `ai_pounce_angle_mean "10.0"`：侧扑随机角度的高斯分布均值。
-- `ai_pounce_angle_std "20.0"`：侧扑随机角度的高斯分布标准差。
-- `ai_straight_pounce_proximity "200.0"`：距离低于该值时允许直接扑击。
-- `ai_aim_offset_sensitivity_hunter "180.0"`：判断生还者是否正在观察 Hunter 的视野角度，范围为 0～180。
-- `ai_wall_detection_distance "-1.0"`：前方墙体检测距离；`-1` 为关闭。
+- `anne_ai_hunter_fast_pounce_proximity "1000.0"`：距离最近生还者多近时开始快速扑击。
+- `anne_ai_hunter_pounce_vertical_angle "7.0"`：限制 Hunter 扑击的垂直角度。
+- `anne_ai_hunter_pounce_angle_mean "10.0"`：侧扑随机角度的高斯分布均值。
+- `anne_ai_hunter_pounce_angle_std "20.0"`：侧扑随机角度的高斯分布标准差。
+- `anne_ai_hunter_straight_pounce_proximity "200.0"`：距离低于该值时允许直接扑击。
+- `anne_ai_hunter_aim_offset_sensitivity "180.0"`：判断生还者是否正在观察 Hunter 的视野角度，范围为 0～180。
+- `anne_ai_hunter_wall_detection_distance "-1.0"`：前方墙体检测距离；`-1` 为关闭。
 
 ## 注意事项
 
 - 插件没有独立启用开关；安装到 `addons/sourcemod/plugins/` 后会自动生效。
-- 不要同时启用 `AI_HardSI` 的 Hunter 模块。两者会同时修改 Hunter 的按键和扑击行为，并使用多项同名 ConVar。
+- 从旧商店包升级时需要替换 `cfg/sourcemod/ai_hunter_new.cfg`；旧的 `ai_*` 配置名不再生效。
+- 自建 ConVar 已经隔离，但仍不要同时启用 `AI_HardSI` 的 Hunter 模块；两者会同时修改 Hunter 的按键和扑击行为。
 - 插件会修改若干原生 Hunter ConVar，并在卸载时恢复其默认值。

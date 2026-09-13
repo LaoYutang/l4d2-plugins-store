@@ -41,13 +41,13 @@ public Plugin myinfo = {
 };
 
 public void OnPluginStart() {	
-	g_hFastPounceProximity = 		CreateConVar("ai_fast_pounce_proximity",			"1000.0",	"At what distance to start pouncing fast");
-	g_hPounceVerticalAngle = 		CreateConVar("ai_pounce_vertical_angle",			"7.0",		"Vertical angle to which AI hunter pounces will be restricted");
-	g_hPounceAngleMean = 			CreateConVar("ai_pounce_angle_mean",				"10.0",		"Mean angle produced by Gaussian RNG");
-	g_hPounceAngleStd = 			CreateConVar("ai_pounce_angle_std",					"20.0",		"One standard deviation from mean as produced by Gaussian RNG");
-	g_hStraightPounceProximity =	CreateConVar("ai_straight_pounce_proximity",		"200.0",	"Distance to nearest survivor at which hunter will consider pouncing straight");
-	g_hAimOffsetSensitivityHunter =	CreateConVar("ai_aim_offset_sensitivity_hunter",	"180.0",	"If the hunter has a target, it will not straight pounce if the target's aim on the horizontal axis is within this radius", _, true, 0.0, true, 180.0);
-	g_hWallDetectionDistance = 		CreateConVar("ai_wall_detection_distance",			"-1.0",		"How far in front of himself infected bot will check for a wall. Use '-1' to disable feature");
+	g_hFastPounceProximity = 		CreateConVar("anne_ai_hunter_fast_pounce_proximity",		"1000.0",	"At what distance to start pouncing fast");
+	g_hPounceVerticalAngle = 		CreateConVar("anne_ai_hunter_pounce_vertical_angle",		"7.0",		"Vertical angle to which AI hunter pounces will be restricted");
+	g_hPounceAngleMean = 			CreateConVar("anne_ai_hunter_pounce_angle_mean",			"10.0",		"Mean angle produced by Gaussian RNG");
+	g_hPounceAngleStd = 			CreateConVar("anne_ai_hunter_pounce_angle_std",			"20.0",		"One standard deviation from mean as produced by Gaussian RNG");
+	g_hStraightPounceProximity =	CreateConVar("anne_ai_hunter_straight_pounce_proximity",	"200.0",	"Distance to nearest survivor at which hunter will consider pouncing straight");
+	g_hAimOffsetSensitivityHunter =	CreateConVar("anne_ai_hunter_aim_offset_sensitivity",		"180.0",	"If the hunter has a target, it will not straight pounce if the target's aim on the horizontal axis is within this radius", _, true, 0.0, true, 180.0);
+	g_hWallDetectionDistance = 		CreateConVar("anne_ai_hunter_wall_detection_distance",		"-1.0",		"How far in front of himself infected bot will check for a wall. Use '-1' to disable feature");
 	g_hLungeInterval = 				FindConVar("z_lunge_interval");
 	g_hHunterPounceRe = 			FindConVar("hunter_pounce_ready_range");
 	g_hHunter_patch_convert_leap =  FindConVar("l4d2_hunter_patch_convert_leap");
