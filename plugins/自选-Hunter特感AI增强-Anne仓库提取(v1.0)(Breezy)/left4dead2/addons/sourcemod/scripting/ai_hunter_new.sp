@@ -378,11 +378,13 @@ bool WithinViewAngle(int client, float offsetThreshold) {
 	static float vSrc[3];
 	static float vTar[3];
 	static float vAng[3];
+	static float vForward[3];
 	GetClientEyePosition(target, vSrc);
 	GetClientEyePosition(client, vTar);
 	if (IsVisibleTo(vSrc, vTar)) {
 		GetClientEyeAngles(target, vAng);
-		return PointWithinViewAngle(vSrc, vTar, vAng, GetFOVDotProduct(offsetThreshold));
+		GetAngleVectors(vAng, vForward, NULL_VECTOR, NULL_VECTOR);
+		return PointWithinViewAngle(vSrc, vTar, vForward, GetFOVDotProduct(offsetThreshold));
 	}
 
 	return false;

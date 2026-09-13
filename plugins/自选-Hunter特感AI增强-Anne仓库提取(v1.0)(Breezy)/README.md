@@ -22,7 +22,7 @@
 - 上游路径：`addons/sourcemod/scripting/optional/AnneHappy/ai_hunter_new.sp`
 - 提取基线：Anne 仓库提交 `607fb78e730847191d42be050b5ed0113fcc6704`
 
-本条目保留 Anne 仓库中的 AI 逻辑和原作者信息。商店适配增加了 `AutoExecConfig(true, "ai_hunter_new")` 和标准自动配置文件，并将插件自建 ConVar 统一放入 `anne_ai_hunter_*` 命名空间，以避免和 `AI_HardSI` 等插件注册同名变量；最后使用 SourceMod `1.11.0.6968` 重新编译。
+本条目保留 Anne 仓库中的 AI 逻辑和原作者信息。商店适配增加了 `AutoExecConfig(true, "ai_hunter_new")` 和标准自动配置文件，将插件自建 ConVar 统一放入 `anne_ai_hunter_*` 命名空间，并修正了视线判断把欧拉角直接当作方向向量使用的问题；最后使用 SourceMod `1.11.0.6968` 重新编译。
 
 ## 依赖
 
@@ -54,5 +54,6 @@
 
 - 插件没有独立启用开关；安装到 `addons/sourcemod/plugins/` 后会自动生效。
 - 从旧商店包升级时需要替换 `cfg/sourcemod/ai_hunter_new.cfg`；旧的 `ai_*` 配置名不再生效。
+- 距离小于 `anne_ai_hunter_straight_pounce_proximity` 时会按设计直扑；希望近距离也侧扑时可降低该值。
 - 自建 ConVar 已经隔离，但仍不要同时启用 `AI_HardSI` 的 Hunter 模块；两者会同时修改 Hunter 的按键和扑击行为。
 - 插件会修改若干原生 Hunter ConVar，并在卸载时恢复其默认值。
