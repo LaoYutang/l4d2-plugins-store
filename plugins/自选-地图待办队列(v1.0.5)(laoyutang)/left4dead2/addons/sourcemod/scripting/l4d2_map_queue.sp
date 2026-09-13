@@ -9,7 +9,7 @@
 
 #define PLUGIN_NAME             "L4D2 Map Queue"
 #define PLUGIN_AUTHOR           "laoyutang"
-#define PLUGIN_VERSION          "1.0.4"
+#define PLUGIN_VERSION          "1.0.5"
 #define PLUGIN_DESCRIPTION      "Persistent campaign queue with votes and automatic finale changes"
 
 #define DATA_FILE               "data/l4d2_map_queue.txt"
@@ -584,7 +584,10 @@ void SubmitOperation(int client, QueueOperation operation, const char[] operatio
 	if (client == 0 || CheckCommandAccess(client, "sm_mq_admin", ADMFLAG_CHANGEMAP, true))
 	{
 		char result[256];
-		ExecuteOperation(operation, operationArgs, result, sizeof(result));
+		// RCON/server-console run may intentionally stage a campaign while the
+		// server is empty. Player-issued runs keep the normal empty-server guard.
+		bool allowEmptyRun = client == 0 && operation == QueueOperation_Run;
+		ExecuteOperation(operation, operationArgs, result, sizeof(result), allowEmptyRun);
 		ReplyToCommand(client, "[MapQueue] %s", result);
 		return;
 	}
@@ -599,7 +602,7 @@ void SubmitOperation(int client, QueueOperation operation, const char[] operatio
 	StartOperationVote(client, operation, operationArgs);
 }
 
-bool ValidateOperation(QueueOperation operation, const char[] operationArgs, char[] error, int errorLength)
+bool ValidateOperation(QueueOperation operation, const char[] operationArgs, char[] error, int errorLength, bool allowEmptyRun = false)
 {
 	if (!g_cvEnable.BoolValue)
 	{
@@ -646,7 +649,7 @@ bool ValidateOperation(QueueOperation operation, const char[] operationArgs, cha
 					strcopy(error, errorLength, "运行状态缺少当前执行项，无法重新切换。");
 					return false;
 				}
-				if (!CanStartAutomation(error, errorLength))
+				if (!CanStartAutomation(error, errorLength, allowEmptyRun))
 					return false;
 
 				RebuildCatalog();
@@ -674,7 +677,7 @@ bool ValidateOperation(QueueOperation operation, const char[] operationArgs, cha
 				strcopy(error, errorLength, "待执行列表为空。");
 				return false;
 			}
-			if (!CanStartAutomation(error, errorLength))
+			if (!CanStartAutomation(error, errorLength, allowEmptyRun))
 				return false;
 
 			MapEntry resolved;
@@ -726,14 +729,14 @@ bool ValidateOperation(QueueOperation operation, const char[] operationArgs, cha
 	return true;
 }
 
-bool CanStartAutomation(char[] error, int errorLength)
+bool CanStartAutomation(char[] error, int errorLength, bool allowEmpty = false)
 {
 	if (!IsSupportedMode())
 	{
 		strcopy(error, errorLength, "当前不是合作、写实或合作类突变模式。");
 		return false;
 	}
-	if (CountHumanPlayers() == 0)
+	if (!allowEmpty && CountHumanPlayers() == 0)
 	{
 		strcopy(error, errorLength, "服务器内没有真人玩家，不能启动队列。");
 		return false;
@@ -830,10 +833,10 @@ void GetOperationVoteTitle(QueueOperation operation, char[] output, int outputLe
 	}
 }
 
-bool ExecuteOperation(QueueOperation operation, const char[] operationArgs, char[] result, int resultLength)
+bool ExecuteOperation(QueueOperation operation, const char[] operationArgs, char[] result, int resultLength, bool allowEmptyRun = false)
 {
 	char error[256];
-	if (!ValidateOperation(operation, operationArgs, error, sizeof(error)))
+	if (!ValidateOperation(operation, operationArgs, error, sizeof(error), allowEmptyRun))
 	{
 		strcopy(result, resultLength, error);
 		return false;
@@ -850,7 +853,7 @@ bool ExecuteOperation(QueueOperation operation, const char[] operationArgs, char
 		case QueueOperation_Clear:
 			return ExecuteClear(result, resultLength);
 		case QueueOperation_Run:
-			return ExecuteRun(result, resultLength);
+			return ExecuteRun(result, resultLength, allowEmptyRun);
 		case QueueOperation_RunAfter:
 			return ExecuteRunAfter(result, resultLength);
 		case QueueOperation_Pause:
@@ -959,7 +962,7 @@ bool ExecuteClear(char[] result, int resultLength)
 	return true;
 }
 
-bool ExecuteRun(char[] result, int resultLength)
+bool ExecuteRun(char[] result, int resultLength, bool allowEmptyRun)
 {
 	if (g_State == QueueState_Running && g_HasActive)
 	{
@@ -987,7 +990,7 @@ bool ExecuteRun(char[] result, int resultLength)
 		g_IgnoreFinaleUntilMapStart = true;
 		g_FinaleHandled = false;
 		SyncMapChangerControl();
-		ScheduleActiveMapSwitch();
+		ScheduleActiveMapSwitch(allowEmptyRun);
 		FormatEx(result, resultLength, "当前地图不属于执行中的战役，正在切换回 %s。", g_Active.map);
 		return true;
 	}
@@ -1028,7 +1031,7 @@ bool ExecuteRun(char[] result, int resultLength)
 	g_IgnoreFinaleUntilMapStart = true;
 	g_FinaleHandled = false;
 	SyncMapChangerControl();
-	ScheduleActiveMapSwitch();
+	ScheduleActiveMapSwitch(allowEmptyRun);
 	FormatEx(result, resultLength, "队列已启动，正在切换至 %s。", g_Active.map);
 	return true;
 }
@@ -1176,19 +1179,20 @@ bool PrepareNextActive(bool &invalid)
 	return true;
 }
 
-void ScheduleActiveMapSwitch()
+void ScheduleActiveMapSwitch(bool allowEmpty = false)
 {
 	delete g_hSwitchTimer;
-	g_hSwitchTimer = CreateTimer(0.1, Timer_SwitchToActiveMap);
+	g_hSwitchTimer = CreateTimer(0.1, Timer_SwitchToActiveMap, allowEmpty);
 }
 
-Action Timer_SwitchToActiveMap(Handle timer)
+Action Timer_SwitchToActiveMap(Handle timer, any data)
 {
 	g_hSwitchTimer = null;
 	if (g_State != QueueState_Running || !g_HasActive)
 		return Plugin_Stop;
 
-	if (CountHumanPlayers() == 0)
+	bool allowEmpty = view_as<bool>(data);
+	if (!allowEmpty && CountHumanPlayers() == 0)
 	{
 		StopForEmptyServer();
 		return Plugin_Stop;
