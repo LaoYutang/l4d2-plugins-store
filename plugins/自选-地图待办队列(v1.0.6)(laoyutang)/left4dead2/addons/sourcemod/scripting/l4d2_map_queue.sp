@@ -9,7 +9,7 @@
 
 #define PLUGIN_NAME             "L4D2 Map Queue"
 #define PLUGIN_AUTHOR           "laoyutang"
-#define PLUGIN_VERSION          "1.0.5"
+#define PLUGIN_VERSION          "1.0.6"
 #define PLUGIN_DESCRIPTION      "Persistent campaign queue with votes and automatic finale changes"
 
 #define DATA_FILE               "data/l4d2_map_queue.txt"
@@ -584,10 +584,10 @@ void SubmitOperation(int client, QueueOperation operation, const char[] operatio
 	if (client == 0 || CheckCommandAccess(client, "sm_mq_admin", ADMFLAG_CHANGEMAP, true))
 	{
 		char result[256];
-		// RCON/server-console run may intentionally stage a campaign while the
-		// server is empty. Player-issued runs keep the normal empty-server guard.
-		bool allowEmptyRun = client == 0 && operation == QueueOperation_Run;
-		ExecuteOperation(operation, operationArgs, result, sizeof(result), allowEmptyRun);
+		// RCON/server-console run or skip may switch maps while the server is
+		// empty. Player-issued operations keep the normal empty-server guard.
+		bool allowEmptySwitch = client == 0 && (operation == QueueOperation_Run || operation == QueueOperation_Skip);
+		ExecuteOperation(operation, operationArgs, result, sizeof(result), allowEmptySwitch);
 		ReplyToCommand(client, "[MapQueue] %s", result);
 		return;
 	}
@@ -602,7 +602,7 @@ void SubmitOperation(int client, QueueOperation operation, const char[] operatio
 	StartOperationVote(client, operation, operationArgs);
 }
 
-bool ValidateOperation(QueueOperation operation, const char[] operationArgs, char[] error, int errorLength, bool allowEmptyRun = false)
+bool ValidateOperation(QueueOperation operation, const char[] operationArgs, char[] error, int errorLength, bool allowEmptySwitch = false)
 {
 	if (!g_cvEnable.BoolValue)
 	{
@@ -649,7 +649,7 @@ bool ValidateOperation(QueueOperation operation, const char[] operationArgs, cha
 					strcopy(error, errorLength, "运行状态缺少当前执行项，无法重新切换。");
 					return false;
 				}
-				if (!CanStartAutomation(error, errorLength, allowEmptyRun))
+				if (!CanStartAutomation(error, errorLength, allowEmptySwitch))
 					return false;
 
 				RebuildCatalog();
@@ -677,7 +677,7 @@ bool ValidateOperation(QueueOperation operation, const char[] operationArgs, cha
 				strcopy(error, errorLength, "待执行列表为空。");
 				return false;
 			}
-			if (!CanStartAutomation(error, errorLength, allowEmptyRun))
+			if (!CanStartAutomation(error, errorLength, allowEmptySwitch))
 				return false;
 
 			MapEntry resolved;
@@ -833,10 +833,10 @@ void GetOperationVoteTitle(QueueOperation operation, char[] output, int outputLe
 	}
 }
 
-bool ExecuteOperation(QueueOperation operation, const char[] operationArgs, char[] result, int resultLength, bool allowEmptyRun = false)
+bool ExecuteOperation(QueueOperation operation, const char[] operationArgs, char[] result, int resultLength, bool allowEmptySwitch = false)
 {
 	char error[256];
-	if (!ValidateOperation(operation, operationArgs, error, sizeof(error), allowEmptyRun))
+	if (!ValidateOperation(operation, operationArgs, error, sizeof(error), allowEmptySwitch))
 	{
 		strcopy(result, resultLength, error);
 		return false;
@@ -853,13 +853,13 @@ bool ExecuteOperation(QueueOperation operation, const char[] operationArgs, char
 		case QueueOperation_Clear:
 			return ExecuteClear(result, resultLength);
 		case QueueOperation_Run:
-			return ExecuteRun(result, resultLength, allowEmptyRun);
+			return ExecuteRun(result, resultLength, allowEmptySwitch);
 		case QueueOperation_RunAfter:
 			return ExecuteRunAfter(result, resultLength);
 		case QueueOperation_Pause:
 			return ExecutePause(result, resultLength);
 		case QueueOperation_Skip:
-			return ExecuteSkip(result, resultLength);
+			return ExecuteSkip(result, resultLength, allowEmptySwitch);
 	}
 
 	strcopy(result, resultLength, "未知操作。");
@@ -962,7 +962,7 @@ bool ExecuteClear(char[] result, int resultLength)
 	return true;
 }
 
-bool ExecuteRun(char[] result, int resultLength, bool allowEmptyRun)
+bool ExecuteRun(char[] result, int resultLength, bool allowEmptySwitch)
 {
 	if (g_State == QueueState_Running && g_HasActive)
 	{
@@ -990,7 +990,7 @@ bool ExecuteRun(char[] result, int resultLength, bool allowEmptyRun)
 		g_IgnoreFinaleUntilMapStart = true;
 		g_FinaleHandled = false;
 		SyncMapChangerControl();
-		ScheduleActiveMapSwitch(allowEmptyRun);
+		ScheduleActiveMapSwitch(allowEmptySwitch);
 		FormatEx(result, resultLength, "当前地图不属于执行中的战役，正在切换回 %s。", g_Active.map);
 		return true;
 	}
@@ -1031,7 +1031,7 @@ bool ExecuteRun(char[] result, int resultLength, bool allowEmptyRun)
 	g_IgnoreFinaleUntilMapStart = true;
 	g_FinaleHandled = false;
 	SyncMapChangerControl();
-	ScheduleActiveMapSwitch(allowEmptyRun);
+	ScheduleActiveMapSwitch(allowEmptySwitch);
 	FormatEx(result, resultLength, "队列已启动，正在切换至 %s。", g_Active.map);
 	return true;
 }
@@ -1090,7 +1090,7 @@ bool ExecutePause(char[] result, int resultLength)
 	return true;
 }
 
-bool ExecuteSkip(char[] result, int resultLength)
+bool ExecuteSkip(char[] result, int resultLength, bool allowEmpty)
 {
 	QueueSnapshot snapshot;
 	TakeQueueSnapshot(snapshot);
@@ -1141,7 +1141,7 @@ bool ExecuteSkip(char[] result, int resultLength)
 		g_IgnoreFinaleUntilMapStart = true;
 		g_FinaleHandled = false;
 		SyncMapChangerControl();
-		ScheduleActiveMapSwitch();
+		ScheduleActiveMapSwitch(allowEmpty);
 		FormatEx(result, resultLength, "已跳过 %s，正在切换至 %s。", skipped, g_Active.map);
 	}
 	else if (nextInvalid)
@@ -1181,6 +1181,15 @@ bool PrepareNextActive(bool &invalid)
 
 void ScheduleActiveMapSwitch(bool allowEmpty = false)
 {
+	// SourceMod timers are driven by game frames, and an empty server that has
+	// gone into hibernation never runs one, so the switch has to be issued
+	// directly instead of waiting for a timer that only fires once it wakes.
+	if (allowEmpty && CountHumanPlayers() == 0)
+	{
+		SwitchToActiveMap(true);
+		return;
+	}
+
 	delete g_hSwitchTimer;
 	g_hSwitchTimer = CreateTimer(0.1, Timer_SwitchToActiveMap, allowEmpty);
 }
@@ -1188,14 +1197,19 @@ void ScheduleActiveMapSwitch(bool allowEmpty = false)
 Action Timer_SwitchToActiveMap(Handle timer, any data)
 {
 	g_hSwitchTimer = null;
-	if (g_State != QueueState_Running || !g_HasActive)
-		return Plugin_Stop;
+	SwitchToActiveMap(view_as<bool>(data));
+	return Plugin_Stop;
+}
 
-	bool allowEmpty = view_as<bool>(data);
+void SwitchToActiveMap(bool allowEmpty)
+{
+	if (g_State != QueueState_Running || !g_HasActive)
+		return;
+
 	if (!allowEmpty && CountHumanPlayers() == 0)
 	{
 		StopForEmptyServer();
-		return Plugin_Stop;
+		return;
 	}
 
 	RebuildCatalog();
@@ -1205,13 +1219,13 @@ Action Timer_SwitchToActiveMap(Handle timer, any data)
 	{
 		LogError("Cannot switch to active queue map '%s': %s", g_Active.map, error);
 		StopAndRequeueActive("执行项已经失效，队列已停止。");
-		return Plugin_Stop;
+		return;
 	}
 
 	CopyMapEntry(resolved, g_Active);
 	PrintToChatAll("\x04[地图待办]\x01 正在进入：%s", g_Active.map);
+	PrintToServer("[MapQueue] 正在进入：%s", g_Active.map);
 	ForceChangeLevel(g_Active.map, "L4D2 map queue");
-	return Plugin_Stop;
 }
 
 Action Event_FinaleWin(Event event, const char[] name, bool dontBroadcast)
