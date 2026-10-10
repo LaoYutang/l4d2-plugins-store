@@ -9,7 +9,7 @@
 
 #define PLUGIN_NAME             "L4D2 Map Queue"
 #define PLUGIN_AUTHOR           "laoyutang"
-#define PLUGIN_VERSION          "1.0.6"
+#define PLUGIN_VERSION          "1.1.0"
 #define PLUGIN_DESCRIPTION      "Persistent campaign queue with votes and automatic finale changes"
 
 #define DATA_FILE               "data/l4d2_map_queue.txt"
@@ -19,6 +19,11 @@
 #define OPERATION_ARGS_LENGTH   512
 #define DATA_VERSION            1
 #define LIST_SCHEMA_VERSION     1
+#define SWITCH_TIMEOUT         10
+#define LOBBY_PAYLOAD_LENGTH    256
+#define MAX_LOBBY_NOTICES        64
+
+native void L4D2_ChangeLevel(const char[] map);
 
 enum QueueState
 {
@@ -68,6 +73,16 @@ enum struct QueueSnapshot
 	QueueState state;
 }
 
+enum struct LobbyNotice
+{
+	int bytes[LOBBY_PAYLOAD_LENGTH];
+	int length;
+	int serials[MAXPLAYERS + 1];
+	int count;
+	int flags;
+	int mapSerial;
+}
+
 public Plugin myinfo =
 {
 	name = PLUGIN_NAME,
@@ -93,15 +108,39 @@ ConVar g_cvEnable;
 ConVar g_cvChangeDelay;
 ConVar g_cvVoteTime;
 ConVar g_cvGameMode;
+ConVar g_cvReconnectGrace;
 
 Handle g_hAdvanceTimer;
 Handle g_hSwitchTimer;
+Handle g_hConfirmTimer;
+Handle g_hReconnectTimer;
+Handle g_hModeTimer;
 
 bool g_FinaleHandled;
 bool g_IgnoreFinaleUntilMapStart;
 bool g_ShuttingDown;
 bool g_Initialized;
 int g_MapSerial;
+int g_OperationSerial;
+bool g_MapChanging;
+bool g_ModeReady;
+bool g_FirstRound = true;
+bool g_RoundEnded;
+bool g_FinaleSeen;
+bool g_StatsSeen;
+bool g_StatsSent;
+bool g_CatalogReadFailed;
+int g_ReconnectDeadline;
+bool g_SwitchPending;
+bool g_SwitchFallback;
+bool g_SwitchAllowEmpty;
+int g_SwitchAttempts;
+int g_SwitchDeadline;
+char g_ExpectedMap[MAP_NAME_LENGTH];
+UserMsg g_umStats = INVALID_MESSAGE_ID;
+UserMsg g_umLobby = INVALID_MESSAGE_ID;
+ArrayList g_LobbyNotices;
+bool g_LobbyRestoreQueued;
 
 char g_GameMode[64];
 char g_DataPath[PLATFORM_MAX_PATH];
@@ -128,6 +167,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int errorLe
 	}
 
 	RegPluginLibrary("l4d2_map_queue");
+	MarkNativeAsOptional("L4D2_ChangeLevel");
 	return APLRes_Success;
 }
 
@@ -139,6 +179,7 @@ public void OnPluginStart()
 	g_Catalog = new ArrayList(sizeof(MapEntry));
 	g_Missions = new ArrayList(sizeof(MissionEntry));
 	g_MapIndex = new StringMap();
+	g_LobbyNotices = new ArrayList(sizeof(LobbyNotice));
 
 	BuildPath(Path_SM, g_DataPath, sizeof(g_DataPath), DATA_FILE);
 	FormatEx(g_TempPath, sizeof(g_TempPath), "%s.tmp", g_DataPath);
@@ -149,8 +190,9 @@ public void OnPluginStart()
 
 	CreateConVar("l4d2_map_queue_version", PLUGIN_VERSION, "L4D2 Map Queue version.", FCVAR_NOTIFY | FCVAR_DONTRECORD);
 	g_cvEnable = CreateConVar("l4d2_map_queue_enable", "1", "Enable the L4D2 map queue.", FCVAR_NOTIFY, true, 0.0, true, 1.0);
-	g_cvChangeDelay = CreateConVar("l4d2_map_queue_change_delay", "3.0", "Seconds to wait after a campaign finale before loading the next queue entry.", FCVAR_NOTIFY, true, 0.0, true, 60.0);
+	g_cvChangeDelay = CreateConVar("l4d2_map_queue_change_delay", "3.0", "Seconds to wait after a finale event; stats/lobby fallbacks can switch immediately.", FCVAR_NOTIFY, true, 0.0, true, 60.0);
 	g_cvVoteTime = CreateConVar("l4d2_map_queue_vote_time", "20", "Duration of map queue votes in seconds.", FCVAR_NOTIFY, true, 5.0, true, 60.0);
+	g_cvReconnectGrace = CreateConVar("l4d2_map_queue_reconnect_grace", "30.0", "Grace period for human reconnects after a map change, in wall-clock seconds.", FCVAR_NOTIFY, true, 1.0, true, 120.0);
 	g_cvEnable.AddChangeHook(Cvar_EnableChanged);
 
 	g_cvGameMode = FindConVar("mp_gamemode");
@@ -164,6 +206,19 @@ public void OnPluginStart()
 
 	HookEvent("finale_win", Event_FinaleWin, EventHookMode_Pre);
 	HookEvent("finale_vehicle_leaving", Event_FinaleVehicleLeaving, EventHookMode_Pre);
+	HookEvent("round_end", Event_QueueRoundEnd);
+	HookEvent("round_start", Event_QueueRoundStart);
+	HookEventEx("round_start_pre_entity", Event_QueueRoundStartPre);
+	g_umStats = GetUserMessageId("StatsCrawlMsg");
+	g_umLobby = GetUserMessageId("DisconnectToLobby");
+	if (g_umStats != INVALID_MESSAGE_ID)
+		HookUserMessage(g_umStats, Message_Stats, false, Message_StatsPost);
+	else
+		LogError("[MapQueue] StatsCrawlMsg unavailable; finale events remain active.");
+	if (g_umLobby != INVALID_MESSAGE_ID)
+		HookUserMessage(g_umLobby, Message_Lobby, true);
+	else
+		LogError("[MapQueue] DisconnectToLobby unavailable; finale events remain active.");
 
 	AutoExecConfig(true, "l4d2_map_queue");
 }
@@ -182,11 +237,15 @@ public void OnPluginEnd()
 {
 	g_ShuttingDown = true;
 	CancelAllTimers();
+	delete g_hReconnectTimer;
+	delete g_hModeTimer;
+	RestoreLobbyNotices();
 
 	if (g_Initialized && g_Queue != null)
 	{
 		RequeueActiveInMemory();
 		g_State = QueueState_Stopped;
+		LogQueueStop("plugin-unload");
 		SaveQueueState();
 	}
 
@@ -211,33 +270,51 @@ public void OnLibraryRemoved(const char[] name)
 public void OnConfigsExecuted()
 {
 	RefreshGameMode();
+	g_ModeReady = true;
 	if (!g_Initialized)
 		return;
 
 	RebuildCatalog();
+	Frame_CheckGameMode(g_MapSerial);
 	SyncMapChangerControl();
 }
 
 public void OnMapStart()
 {
-	g_FinaleHandled = false;
-	g_IgnoreFinaleUntilMapStart = false;
+	g_MapChanging = false;
+	g_ModeReady = false;
+	ConfirmLoadedMap();
+	ResetFinaleContext();
+	g_FirstRound = true;
+	g_RoundEnded = false;
+	BeginReconnectGrace();
 	RefreshGameMode();
 	if (!g_Initialized)
 		return;
 
 	RebuildCatalog();
-	if (IsAutomationActive() && !IsSupportedMode())
-		StopAndRequeueActive("当前模式不属于合作战役，地图待办已停止。");
 	RefreshMapChangerConVars();
 	SyncMapChangerControl();
 }
 
 public void OnMapEnd()
 {
+	// A paused queue releases map_changer. Its stats post hook can start an
+	// external change before our post/frame is delivered; preserve the trusted
+	// completion context while the old map is still available, without SDKs.
+	if (g_State == QueueState_Paused && g_HasActive && g_StatsSeen && !g_IgnoreFinaleUntilMapStart)
+		TryCompleteCampaign(true, true, true);
 	// SourceMod fires OnClientDisconnect for connected clients during level
 	// shutdown before OnMapEnd. Invalidate empty-server checks from that map.
 	g_MapSerial++;
+	g_OperationSerial++;
+	g_MapChanging = true;
+	g_ModeReady = false;
+	delete g_hConfirmTimer;
+	delete g_hReconnectTimer;
+	delete g_hModeTimer;
+	g_ReconnectDeadline = 0;
+	DiscardLobbyNotices();
 
 	delete g_hSwitchTimer;
 
@@ -264,8 +341,23 @@ void Frame_CheckForEmptyServer(any data)
 	if (data != g_MapSerial)
 		return;
 
-	if (!g_ShuttingDown && IsAutomationActive() && CountHumanPlayers() == 0)
-		StopForEmptyServer();
+	CheckEmptyServer();
+}
+
+public void OnClientPutInServer(int client)
+{
+	if (!IsFakeClient(client) && g_ReconnectDeadline != 0)
+	{
+		LogMessage("[MapQueue] reconnect grace ended: human entered, serial=%d connected=%d ingame=%d", g_MapSerial, CountConnectedHumans(), CountHumanPlayers());
+		g_ReconnectDeadline = 0;
+		delete g_hReconnectTimer;
+	}
+}
+
+public void L4D_OnServerHibernationUpdate(bool hibernating)
+{
+	CheckSwitchRequest();
+	CheckEmptyServer();
 }
 
 void Frame_RefreshMapChanger(any data)
@@ -276,8 +368,28 @@ void Frame_RefreshMapChanger(any data)
 
 void Frame_CheckGameMode(any data)
 {
-	if (!g_ShuttingDown && IsAutomationActive() && !IsSupportedMode())
+	if (data != g_MapSerial || !g_ModeReady || g_MapChanging || g_ShuttingDown || !IsAutomationActive())
+		return;
+	int mode = L4D_GetGameModeType();
+	if (mode == GAMEMODE_UNKNOWN)
+	{
+		if (g_hModeTimer == null)
+			g_hModeTimer = CreateTimer(1.0, Timer_CheckQueueMode, g_MapSerial);
+		return;
+	}
+	delete g_hModeTimer;
+	if (mode != GAMEMODE_COOP)
 		StopAndRequeueActive("当前模式不属于合作战役，地图待办已停止。");
+}
+
+Action Timer_CheckQueueMode(Handle timer, any data)
+{
+	if (timer == g_hModeTimer)
+	{
+		g_hModeTimer = null;
+		Frame_CheckGameMode(data);
+	}
+	return Plugin_Stop;
 }
 
 Action Command_MapQueue(int client, int args)
@@ -289,6 +401,8 @@ Action Command_MapQueue(int client, int args)
 		ReplyToCommand(client, "[MapQueue] 插件仍在初始化，请稍后重试。");
 		return Plugin_Handled;
 	}
+	CheckSwitchRequest();
+	CheckEmptyServer();
 
 	if (args == 0)
 	{
@@ -933,8 +1047,9 @@ bool ExecuteRemove(const char[] map, char[] result, int resultLength)
 
 	if (g_State == QueueState_Stopped)
 	{
-		delete g_hAdvanceTimer;
+		CancelAllTimers(true);
 		g_IgnoreFinaleUntilMapStart = false;
+		LogQueueStop("pending-list-empty");
 		SyncMapChangerControl();
 	}
 
@@ -955,7 +1070,9 @@ bool ExecuteClear(char[] result, int resultLength)
 	if (!CommitQueueMutation(snapshot, result, resultLength))
 		return false;
 
-	CancelAllTimers();
+	CancelAllTimers(true);
+	ResetFinaleContext();
+	LogQueueStop("manual-clear");
 	g_IgnoreFinaleUntilMapStart = false;
 	SyncMapChangerControl();
 	strcopy(result, resultLength, "已清空地图待办并停止执行。");
@@ -1045,9 +1162,12 @@ bool ExecuteRunAfter(char[] result, int resultLength)
 	if (!CommitQueueMutation(snapshot, result, resultLength))
 		return false;
 
+	CancelAllTimers();
 	g_IgnoreFinaleUntilMapStart = false;
 	g_FinaleHandled = false;
 	SyncMapChangerControl();
+	if (g_FinaleSeen || g_StatsSent)
+		QueueCompletionFrame();
 	strcopy(result, resultLength, "队列已等待，将在当前战役通关后执行。");
 	return true;
 }
@@ -1058,7 +1178,7 @@ bool ExecutePause(char[] result, int resultLength)
 	TakeQueueSnapshot(snapshot);
 
 	bool currentContinues = g_State == QueueState_Running && g_HasActive;
-	bool switchNotStarted = currentContinues && g_hSwitchTimer != null;
+	bool switchNotStarted = currentContinues && g_SwitchPending;
 	if (switchNotStarted)
 	{
 		RequeueActiveInMemory();
@@ -1076,7 +1196,8 @@ bool ExecutePause(char[] result, int resultLength)
 	if (!CommitQueueMutation(snapshot, result, resultLength))
 		return false;
 
-	CancelAllTimers();
+	CancelAllTimers(true);
+	LogQueueStop("manual-pause");
 	if (g_State != QueueState_Paused)
 		g_IgnoreFinaleUntilMapStart = false;
 	SyncMapChangerControl();
@@ -1135,7 +1256,7 @@ bool ExecuteSkip(char[] result, int resultLength, bool allowEmpty)
 	if (!CommitQueueMutation(snapshot, result, resultLength))
 		return false;
 
-	CancelAllTimers();
+	CancelAllTimers(!startNext);
 	if (startNext)
 	{
 		g_IgnoreFinaleUntilMapStart = true;
@@ -1146,12 +1267,15 @@ bool ExecuteSkip(char[] result, int resultLength, bool allowEmpty)
 	}
 	else if (nextInvalid)
 	{
+		LogQueueStop("skip-next-invalid");
 		g_IgnoreFinaleUntilMapStart = false;
 		SyncMapChangerControl();
 		FormatEx(result, resultLength, "已跳过 %s；下一项无效，队列已停止并保留该项。", skipped);
 	}
 	else
 	{
+		if (g_State == QueueState_Stopped)
+			LogQueueStop("skip-no-next");
 		if (g_State != QueueState_Running)
 			g_IgnoreFinaleUntilMapStart = false;
 		SyncMapChangerControl();
@@ -1179,34 +1303,48 @@ bool PrepareNextActive(bool &invalid)
 	return true;
 }
 
-void ScheduleActiveMapSwitch(bool allowEmpty = false)
+void ScheduleActiveMapSwitch(bool allowEmpty = false, bool fallback = false, bool deferFallback = false)
 {
-	// SourceMod timers are driven by game frames, and an empty server that has
-	// gone into hibernation never runs one, so the switch has to be issued
-	// directly instead of waiting for a timer that only fires once it wakes.
-	if (allowEmpty && CountHumanPlayers() == 0)
-	{
-		SwitchToActiveMap(true);
-		return;
-	}
-
 	delete g_hSwitchTimer;
-	g_hSwitchTimer = CreateTimer(0.1, Timer_SwitchToActiveMap, allowEmpty);
+	delete g_hConfirmTimer;
+	g_SwitchPending = true;
+	g_SwitchFallback = fallback;
+	g_SwitchAllowEmpty = allowEmpty;
+	g_SwitchAttempts = 0;
+	g_SwitchDeadline = 0;
+	strcopy(g_ExpectedMap, sizeof(g_ExpectedMap), g_Active.map);
+
+	// Keep console switching independent of timers on a hibernating server.
+	if (allowEmpty && CountHumanPlayers() == 0)
+		SwitchToActiveMap(true, fallback);
+	else if (fallback && deferFallback)
+		RequestFrame(Frame_SwitchToActiveMap, g_OperationSerial);
+	else if (fallback)
+		SwitchToActiveMap(allowEmpty, true);
+	else
+		g_hSwitchTimer = CreateTimer(0.1, Timer_SwitchToActiveMap, g_OperationSerial);
 }
 
 Action Timer_SwitchToActiveMap(Handle timer, any data)
 {
+	if (timer != g_hSwitchTimer || data != g_OperationSerial)
+		return Plugin_Stop;
 	g_hSwitchTimer = null;
-	SwitchToActiveMap(view_as<bool>(data));
+	SwitchToActiveMap(g_SwitchAllowEmpty, g_SwitchFallback);
 	return Plugin_Stop;
 }
 
-void SwitchToActiveMap(bool allowEmpty)
+void Frame_SwitchToActiveMap(any data)
 {
-	if (g_State != QueueState_Running || !g_HasActive)
-		return;
+	if (data == g_OperationSerial && !g_MapChanging && !g_ShuttingDown)
+		SwitchToActiveMap(g_SwitchAllowEmpty, g_SwitchFallback);
+}
 
-	if (!allowEmpty && CountHumanPlayers() == 0)
+void SwitchToActiveMap(bool allowEmpty, bool fallback = false)
+{
+	if (g_State != QueueState_Running || !g_HasActive || !g_SwitchPending || g_MapChanging || g_ShuttingDown)
+		return;
+	if (!allowEmpty && IsTrulyEmpty())
 	{
 		StopForEmptyServer();
 		return;
@@ -1215,136 +1353,164 @@ void SwitchToActiveMap(bool allowEmpty)
 	RebuildCatalog();
 	MapEntry resolved;
 	char error[256];
-	if (!ResolveMapEntry(g_Active.map, resolved, error, sizeof(error)))
+	if (!StrEqual(g_ExpectedMap, g_Active.map, false) || !ResolveMapEntry(g_Active.map, resolved, error, sizeof(error)))
 	{
 		LogError("Cannot switch to active queue map '%s': %s", g_Active.map, error);
 		StopAndRequeueActive("执行项已经失效，队列已停止。");
 		return;
 	}
+	bool nativeFallback = fallback && GetFeatureStatus(FeatureType_Native, "L4D2_ChangeLevel") == FeatureStatus_Available;
+	if (fallback && !nativeFallback && !IsSafeCommandMap(g_Active.map))
+	{
+		StopAndRequeueActive("地图代码无法安全用于 changelevel 兜底，队列已停止并保留该项。");
+		return;
+	}
 
-	CopyMapEntry(resolved, g_Active);
+	g_SwitchAttempts++;
+	g_SwitchDeadline = GetTime() + SWITCH_TIMEOUT;
+	g_SwitchFallback = fallback;
+	delete g_hConfirmTimer;
+	g_hConfirmTimer = CreateTimer(0.5, Timer_ConfirmSwitch, g_OperationSerial, TIMER_REPEAT);
 	PrintToChatAll("\x04[地图待办]\x01 正在进入：%s", g_Active.map);
 	PrintToServer("[MapQueue] 正在进入：%s", g_Active.map);
-	ForceChangeLevel(g_Active.map, "L4D2 map queue");
+
+	LogMessage("[MapQueue] switch request: target=%s attempt=%d backend=%s map_serial=%d op=%d", g_ExpectedMap, g_SwitchAttempts,
+		fallback ? (nativeFallback ? "L4D2_ChangeLevel" : "changelevel") : "ForceChangeLevel", g_MapSerial, g_OperationSerial);
+	if (!fallback)
+		ForceChangeLevel(g_Active.map, "L4D2 map queue");
+	else if (nativeFallback)
+		L4D2_ChangeLevel(g_Active.map);
+	else
+		ServerCommand("changelevel %s", g_Active.map);
 }
 
 Action Event_FinaleWin(Event event, const char[] name, bool dontBroadcast)
 {
-	TryCompleteCampaign();
+	ObserveFinaleEvent(name);
 	return Plugin_Continue;
 }
 
 Action Event_FinaleVehicleLeaving(Event event, const char[] name, bool dontBroadcast)
 {
-	TryCompleteCampaign();
+	ObserveFinaleEvent(name);
 	return Plugin_Continue;
 }
 
-void TryCompleteCampaign()
+bool TryCompleteCampaign(bool fallback = false, bool immediate = false, bool quiet = false)
 {
 	if (!g_cvEnable.BoolValue || g_FinaleHandled || g_IgnoreFinaleUntilMapStart || !IsAutomationActive())
-		return;
+		return false;
 	if (!IsSupportedMode() || !L4D_IsMissionFinalMap())
-		return;
+		return false;
 	if (g_State != QueueState_Running && g_State != QueueState_Armed && g_State != QueueState_Paused)
-		return;
+		return false;
 
-	g_FinaleHandled = true;
 	bool wasPaused = g_State == QueueState_Paused;
-
 	QueueSnapshot snapshot;
 	TakeQueueSnapshot(snapshot);
-
-	if (g_State == QueueState_Running || g_State == QueueState_Paused)
+	if (g_State == QueueState_Running || wasPaused)
 	{
 		g_HasActive = false;
 		ClearMapEntry(g_Active);
 	}
-
-	if (wasPaused)
-		g_State = QueueState_Stopped;
-	else
-		g_State = g_Queue.Length > 0 ? QueueState_Delay : QueueState_Stopped;
+	g_State = !wasPaused && g_Queue.Length > 0 ? QueueState_Delay : QueueState_Stopped;
 
 	char error[256];
 	if (!CommitQueueMutation(snapshot, error, sizeof(error)))
 	{
 		LogError("Unable to persist campaign completion: %s", error);
-		RequeueActiveInMemory();
-		g_State = QueueState_Stopped;
-		CancelAllTimers();
-		SyncMapChangerControl();
-		return;
+		StopAndRequeueActive("通关状态保存失败，队列已停止并保留未完成项。", quiet);
+		return false;
 	}
 
-	if (wasPaused)
-	{
-		CancelAllTimers();
-		g_IgnoreFinaleUntilMapStart = false;
-		SyncMapChangerControl();
-		PrintToChatAll("\x04[地图待办]\x01 当前战役已完成，后续待办保持暂停。");
-		return;
-	}
-
+	CancelAllTimers();
+	g_FinaleHandled = true;
+	LogMessage("[MapQueue] completion accepted: source=%s map_serial=%d op=%d pending=%d",
+		fallback ? "mapnext-fallback" : "finale-event", g_MapSerial, g_OperationSerial, g_Queue.Length);
+	SyncMapChangerControl();
 	if (g_State == QueueState_Stopped)
 	{
-		SyncMapChangerControl();
-		PrintToChatAll("\x04[地图待办]\x01 队列已全部完成。");
-		return;
+		g_IgnoreFinaleUntilMapStart = false;
+		LogQueueStop(wasPaused ? "paused-completion" : "queue-complete");
+		if (!quiet)
+			PrintToChatAll("\x04[地图待办]\x01 %s", wasPaused ? "当前战役已完成，后续待办保持暂停。" : "队列已全部完成。");
+		return true;
 	}
+	if (immediate || fallback)
+		return AdvanceQueue(true, quiet);
 
-	SyncMapChangerControl();
 	float delay = g_cvChangeDelay.FloatValue;
 	if (delay < 0.1)
 		delay = 0.1;
-	delete g_hAdvanceTimer;
-	g_hAdvanceTimer = CreateTimer(delay, Timer_StartNextQueueItem);
-	PrintToChatAll("\x04[地图待办]\x01 战役已完成，%.1f 秒后进入下一项。", delay);
+	g_hAdvanceTimer = CreateTimer(delay, Timer_StartNextQueueItem, g_OperationSerial);
+	if (!quiet)
+		PrintToChatAll("\x04[地图待办]\x01 战役已完成，%.1f 秒后进入下一项。", delay);
+	return true;
 }
 
-Action Timer_StartNextQueueItem(Handle timer)
+bool AdvanceQueue(bool fallback = false, bool quiet = false)
 {
-	g_hAdvanceTimer = null;
 	if (g_State != QueueState_Delay)
-		return Plugin_Stop;
-
-	if (CountHumanPlayers() == 0)
+		return false;
+	int mode = L4D_GetGameModeType();
+	if (!g_ModeReady || mode == GAMEMODE_UNKNOWN)
 	{
-		StopForEmptyServer();
-		return Plugin_Stop;
+		if (!quiet && g_hAdvanceTimer == null)
+			g_hAdvanceTimer = CreateTimer(1.0, Timer_StartNextQueueItem, g_OperationSerial);
+		return false;
 	}
-
+	if (mode != GAMEMODE_COOP)
+	{
+		StopAndRequeueActive("当前模式不属于合作战役，地图待办已停止。", quiet);
+		return false;
+	}
+	if (IsTrulyEmpty())
+	{
+		StopAndRequeueActive("服务器已空，地图待办停止；未完成项已放回队首。", quiet);
+		return false;
+	}
+	// A lobby interception must not call the mission SDK or emit messages.
+	if (!quiet)
+		RebuildCatalog();
+	MapEntry pending;
 	MapEntry resolved;
 	char error[256];
-	if (!ResolvePendingHead(resolved, error, sizeof(error)))
+	if (g_Queue.Length == 0)
+		strcopy(error, sizeof(error), "待执行列表为空。");
+	else
 	{
-		g_State = QueueState_Stopped;
-		g_IgnoreFinaleUntilMapStart = false;
-		SaveQueueState();
-		SyncMapChangerControl();
-		LogError("Cannot advance map queue: %s", error);
-		PrintToChatAll("\x04[地图待办]\x01 %s 队列已停止。", error);
-		return Plugin_Stop;
+		g_Queue.GetArray(0, pending);
+		if (ResolveMapEntry(pending.map, resolved, error, sizeof(error)))
+		{
+			QueueSnapshot snapshot;
+			TakeQueueSnapshot(snapshot);
+			g_Queue.Erase(0);
+			CopyMapEntry(resolved, g_Active);
+			g_HasActive = true;
+			g_State = QueueState_Running;
+			if (!CommitQueueMutation(snapshot, error, sizeof(error)))
+			{
+				LogError("Cannot persist the next queue item: %s", error);
+				StopAndRequeueActive("下一项保存失败，队列已停止并保留待办。", quiet);
+				return false;
+			}
+			delete g_hAdvanceTimer;
+			g_IgnoreFinaleUntilMapStart = true;
+			ScheduleActiveMapSwitch(false, fallback, quiet);
+			return true;
+		}
 	}
+	LogError("Cannot advance map queue: %s", error);
+	StopAndRequeueActive("下一项无效，队列已停止并保留该项。", quiet);
+	return false;
+}
 
-	QueueSnapshot snapshot;
-	TakeQueueSnapshot(snapshot);
-	g_Queue.Erase(0);
-	CopyMapEntry(resolved, g_Active);
-	g_HasActive = true;
-	g_State = QueueState_Running;
-
-	if (!CommitQueueMutation(snapshot, error, sizeof(error)))
-	{
-		LogError("Cannot persist the next queue item: %s", error);
-		g_State = QueueState_Stopped;
-		g_IgnoreFinaleUntilMapStart = false;
-		SyncMapChangerControl();
+Action Timer_StartNextQueueItem(Handle timer, any data)
+{
+	if (timer != g_hAdvanceTimer || data != g_OperationSerial)
 		return Plugin_Stop;
-	}
-
-	g_IgnoreFinaleUntilMapStart = true;
-	ScheduleActiveMapSwitch();
+	g_hAdvanceTimer = null;
+	AdvanceQueue();
 	return Plugin_Stop;
 }
 
@@ -1353,7 +1519,7 @@ void StopForEmptyServer()
 	StopAndRequeueActive("服务器已空，地图待办停止；未完成项已放回队首。");
 }
 
-void StopAndRequeueActive(const char[] reason)
+void StopAndRequeueActive(const char[] reason, bool quiet = false)
 {
 	QueueSnapshot snapshot;
 	TakeQueueSnapshot(snapshot);
@@ -1368,10 +1534,11 @@ void StopAndRequeueActive(const char[] reason)
 		g_State = QueueState_Stopped;
 	}
 
-	CancelAllTimers();
+	CancelAllTimers(true);
+	LogQueueStop(reason);
 	g_IgnoreFinaleUntilMapStart = false;
 	SyncMapChangerControl();
-	if (CountHumanPlayers() > 0)
+	if (!quiet && CountHumanPlayers() > 0)
 		PrintToChatAll("\x04[地图待办]\x01 %s", reason);
 }
 
@@ -1385,10 +1552,18 @@ void RequeueActiveInMemory()
 	ClearMapEntry(g_Active);
 }
 
-void CancelAllTimers()
+void CancelAllTimers(bool restoreLobby = false)
 {
+	g_OperationSerial++;
 	delete g_hAdvanceTimer;
 	delete g_hSwitchTimer;
+	delete g_hConfirmTimer;
+	g_SwitchPending = false;
+	g_SwitchAttempts = 0;
+	g_SwitchDeadline = 0;
+	g_ExpectedMap[0] = '\0';
+	if (restoreLobby)
+		QueueLobbyRestore();
 }
 
 bool IsAutomationActive()
@@ -1438,7 +1613,7 @@ void Cvar_GameModeChanged(ConVar convar, const char[] oldValue, const char[] new
 		return;
 
 	RebuildCatalog();
-	RequestFrame(Frame_CheckGameMode);
+	RequestFrame(Frame_CheckGameMode, g_MapSerial);
 }
 
 void RefreshGameMode()
@@ -1472,13 +1647,20 @@ void RebuildCatalog()
 	if (g_Catalog == null || g_Missions == null || g_MapIndex == null || g_hSDKGetAllMissions == null)
 		return;
 
-	g_Catalog.Clear();
-	g_Missions.Clear();
-	g_MapIndex.Clear();
-
 	SourceKeyValues root = SDKCall(g_hSDKGetAllMissions, g_pMatchExtL4D);
 	if (root.IsNull())
+	{
+		if (!g_CatalogReadFailed)
+			LogError("[MapQueue] mission catalog temporarily unavailable; retaining %d cached maps.", g_Catalog.Length);
+		g_CatalogReadFailed = true;
 		return;
+	}
+	ArrayList oldCatalog = g_Catalog;
+	ArrayList oldMissions = g_Missions;
+	StringMap oldIndex = g_MapIndex;
+	g_Catalog = new ArrayList(sizeof(MapEntry));
+	g_Missions = new ArrayList(sizeof(MissionEntry));
+	g_MapIndex = new StringMap();
 	bool includeCurrentMode = IsSupportedMode()
 		&& g_GameMode[0]
 		&& !StrEqual(g_GameMode, "coop", false)
@@ -1499,6 +1681,23 @@ void RebuildCatalog()
 		AddMissionModeToCatalog(mission, missionEntry, "coop");
 		AddMissionModeToCatalog(mission, missionEntry, "realism");
 	}
+	if (g_Catalog.Length == 0 && oldCatalog.Length > 0)
+	{
+		delete g_Catalog;
+		delete g_Missions;
+		delete g_MapIndex;
+		g_Catalog = oldCatalog;
+		g_Missions = oldMissions;
+		g_MapIndex = oldIndex;
+		if (!g_CatalogReadFailed)
+			LogError("[MapQueue] empty mission catalog; retaining cached maps and checking BSPs separately.");
+		g_CatalogReadFailed = true;
+		return;
+	}
+	g_CatalogReadFailed = false;
+	delete oldCatalog;
+	delete oldMissions;
+	delete oldIndex;
 }
 
 void AddMissionModeToCatalog(SourceKeyValues mission, MissionEntry missionEntry, const char[] mode)
@@ -2044,6 +2243,7 @@ void LoadQueueState()
 		return;
 	}
 
+	LogQueueStop(loadedBackup ? "backup-recovery" : "state-load-recovery");
 	if (!SaveQueueState())
 		LogError("Loaded map queue state but failed to normalize the recovery file.");
 }
@@ -2204,3 +2404,5 @@ void StringToLower(char[] value)
 	for (int i = 0; value[i]; i++)
 		value[i] = CharToLower(value[i]);
 }
+
+#include "l4d2_map_queue/switching.sp"
