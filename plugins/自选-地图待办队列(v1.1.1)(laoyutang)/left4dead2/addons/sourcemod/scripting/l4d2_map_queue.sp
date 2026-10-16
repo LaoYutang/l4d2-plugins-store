@@ -9,7 +9,7 @@
 
 #define PLUGIN_NAME             "L4D2 Map Queue"
 #define PLUGIN_AUTHOR           "laoyutang"
-#define PLUGIN_VERSION          "1.1.0"
+#define PLUGIN_VERSION          "1.1.1"
 #define PLUGIN_DESCRIPTION      "Persistent campaign queue with votes and automatic finale changes"
 
 #define DATA_FILE               "data/l4d2_map_queue.txt"
@@ -108,12 +108,10 @@ ConVar g_cvEnable;
 ConVar g_cvChangeDelay;
 ConVar g_cvVoteTime;
 ConVar g_cvGameMode;
-ConVar g_cvReconnectGrace;
 
 Handle g_hAdvanceTimer;
 Handle g_hSwitchTimer;
 Handle g_hConfirmTimer;
-Handle g_hReconnectTimer;
 Handle g_hModeTimer;
 
 bool g_FinaleHandled;
@@ -130,7 +128,9 @@ bool g_FinaleSeen;
 bool g_StatsSeen;
 bool g_StatsSent;
 bool g_CatalogReadFailed;
-int g_ReconnectDeadline;
+bool g_WaitingForHumans;
+bool g_WaitingFallback;
+bool g_PlayerResumeQueued;
 bool g_SwitchPending;
 bool g_SwitchFallback;
 bool g_SwitchAllowEmpty;
@@ -192,7 +192,8 @@ public void OnPluginStart()
 	g_cvEnable = CreateConVar("l4d2_map_queue_enable", "1", "Enable the L4D2 map queue.", FCVAR_NOTIFY, true, 0.0, true, 1.0);
 	g_cvChangeDelay = CreateConVar("l4d2_map_queue_change_delay", "3.0", "Seconds to wait after a finale event; stats/lobby fallbacks can switch immediately.", FCVAR_NOTIFY, true, 0.0, true, 60.0);
 	g_cvVoteTime = CreateConVar("l4d2_map_queue_vote_time", "20", "Duration of map queue votes in seconds.", FCVAR_NOTIFY, true, 5.0, true, 60.0);
-	g_cvReconnectGrace = CreateConVar("l4d2_map_queue_reconnect_grace", "30.0", "Grace period for human reconnects after a map change, in wall-clock seconds.", FCVAR_NOTIFY, true, 1.0, true, 120.0);
+	// Accept old cfg files without an unknown-command warning. No runtime use.
+	CreateConVar("l4d2_map_queue_reconnect_grace", "30.0", "Deprecated; ignored. Empty servers retain the queue and wait for players.", FCVAR_DONTRECORD);
 	g_cvEnable.AddChangeHook(Cvar_EnableChanged);
 
 	g_cvGameMode = FindConVar("mp_gamemode");
@@ -237,7 +238,6 @@ public void OnPluginEnd()
 {
 	g_ShuttingDown = true;
 	CancelAllTimers();
-	delete g_hReconnectTimer;
 	delete g_hModeTimer;
 	RestoreLobbyNotices();
 
@@ -287,7 +287,6 @@ public void OnMapStart()
 	ResetFinaleContext();
 	g_FirstRound = true;
 	g_RoundEnded = false;
-	BeginReconnectGrace();
 	RefreshGameMode();
 	if (!g_Initialized)
 		return;
@@ -304,21 +303,20 @@ public void OnMapEnd()
 	// completion context while the old map is still available, without SDKs.
 	if (g_State == QueueState_Paused && g_HasActive && g_StatsSeen && !g_IgnoreFinaleUntilMapStart)
 		TryCompleteCampaign(true, true, true);
-	// SourceMod fires OnClientDisconnect for connected clients during level
-	// shutdown before OnMapEnd. Invalidate empty-server checks from that map.
+	// Invalidate deferred completion, switching and player-resume callbacks.
 	g_MapSerial++;
 	g_OperationSerial++;
 	g_MapChanging = true;
 	g_ModeReady = false;
 	delete g_hConfirmTimer;
-	delete g_hReconnectTimer;
 	delete g_hModeTimer;
-	g_ReconnectDeadline = 0;
+	g_WaitingForHumans = false;
+	g_PlayerResumeQueued = false;
 	DiscardLobbyNotices();
 
 	delete g_hSwitchTimer;
 
-	if (g_State == QueueState_Delay && g_hAdvanceTimer != null)
+	if (g_State == QueueState_Delay)
 	{
 		delete g_hAdvanceTimer;
 		g_State = QueueState_Armed;
@@ -330,34 +328,20 @@ public void OnMapEnd()
 public void OnClientDisconnect(int client)
 {
 	if (!IsFakeClient(client))
-	{
 		g_MenuMission[client][0] = '\0';
-		RequestFrame(Frame_CheckForEmptyServer, g_MapSerial);
-	}
-}
-
-void Frame_CheckForEmptyServer(any data)
-{
-	if (data != g_MapSerial)
-		return;
-
-	CheckEmptyServer();
 }
 
 public void OnClientPutInServer(int client)
 {
-	if (!IsFakeClient(client) && g_ReconnectDeadline != 0)
-	{
-		LogMessage("[MapQueue] reconnect grace ended: human entered, serial=%d connected=%d ingame=%d", g_MapSerial, CountConnectedHumans(), CountHumanPlayers());
-		g_ReconnectDeadline = 0;
-		delete g_hReconnectTimer;
-	}
+	if (!IsFakeClient(client))
+		QueuePlayerResume();
 }
 
 public void L4D_OnServerHibernationUpdate(bool hibernating)
 {
 	CheckSwitchRequest();
-	CheckEmptyServer();
+	if (!hibernating)
+		QueuePlayerResume();
 }
 
 void Frame_RefreshMapChanger(any data)
@@ -380,6 +364,8 @@ void Frame_CheckGameMode(any data)
 	delete g_hModeTimer;
 	if (mode != GAMEMODE_COOP)
 		StopAndRequeueActive("当前模式不属于合作战役，地图待办已停止。");
+	else
+		QueuePlayerResume();
 }
 
 Action Timer_CheckQueueMode(Handle timer, any data)
@@ -402,7 +388,6 @@ Action Command_MapQueue(int client, int args)
 		return Plugin_Handled;
 	}
 	CheckSwitchRequest();
-	CheckEmptyServer();
 
 	if (args == 0)
 	{
@@ -1344,11 +1329,14 @@ void SwitchToActiveMap(bool allowEmpty, bool fallback = false)
 {
 	if (g_State != QueueState_Running || !g_HasActive || !g_SwitchPending || g_MapChanging || g_ShuttingDown)
 		return;
-	if (!allowEmpty && IsTrulyEmpty())
+	// Once a request has been issued, its confirmation and bounded retry must
+	// still resolve real failures, even if all players have since disconnected.
+	if (!allowEmpty && g_SwitchAttempts == 0 && CountHumanPlayers() == 0)
 	{
-		StopForEmptyServer();
+		WaitForQueuePlayers(fallback);
 		return;
 	}
+	g_WaitingForHumans = false;
 
 	RebuildCatalog();
 	MapEntry resolved;
@@ -1450,7 +1438,7 @@ bool TryCompleteCampaign(bool fallback = false, bool immediate = false, bool qui
 
 bool AdvanceQueue(bool fallback = false, bool quiet = false)
 {
-	if (g_State != QueueState_Delay)
+	if (g_State != QueueState_Delay || !g_cvEnable.BoolValue || g_MapChanging || g_ShuttingDown)
 		return false;
 	int mode = L4D_GetGameModeType();
 	if (!g_ModeReady || mode == GAMEMODE_UNKNOWN)
@@ -1464,11 +1452,12 @@ bool AdvanceQueue(bool fallback = false, bool quiet = false)
 		StopAndRequeueActive("当前模式不属于合作战役，地图待办已停止。", quiet);
 		return false;
 	}
-	if (IsTrulyEmpty())
+	if (CountHumanPlayers() == 0)
 	{
-		StopAndRequeueActive("服务器已空，地图待办停止；未完成项已放回队首。", quiet);
+		WaitForQueuePlayers(fallback);
 		return false;
 	}
+	g_WaitingForHumans = false;
 	// A lobby interception must not call the mission SDK or emit messages.
 	if (!quiet)
 		RebuildCatalog();
@@ -1510,13 +1499,8 @@ Action Timer_StartNextQueueItem(Handle timer, any data)
 	if (timer != g_hAdvanceTimer || data != g_OperationSerial)
 		return Plugin_Stop;
 	g_hAdvanceTimer = null;
-	AdvanceQueue();
+	AdvanceQueue(g_WaitingForHumans && g_WaitingFallback);
 	return Plugin_Stop;
-}
-
-void StopForEmptyServer()
-{
-	StopAndRequeueActive("服务器已空，地图待办停止；未完成项已放回队首。");
 }
 
 void StopAndRequeueActive(const char[] reason, bool quiet = false)
@@ -1562,6 +1546,9 @@ void CancelAllTimers(bool restoreLobby = false)
 	g_SwitchAttempts = 0;
 	g_SwitchDeadline = 0;
 	g_ExpectedMap[0] = '\0';
+	g_WaitingForHumans = false;
+	g_WaitingFallback = false;
+	g_PlayerResumeQueued = false;
 	if (restoreLobby)
 		QueueLobbyRestore();
 }

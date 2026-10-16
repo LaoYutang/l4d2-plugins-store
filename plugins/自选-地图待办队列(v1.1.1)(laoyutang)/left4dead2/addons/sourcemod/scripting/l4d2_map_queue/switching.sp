@@ -58,7 +58,7 @@ void Frame_CompleteCampaign(any data)
 	// Existing event timers always win. Stats can only fill a missing trigger.
 	if (!g_FinaleHandled && (g_FinaleSeen || g_StatsSent))
 		TryCompleteCampaign(!g_FinaleSeen);
-	else if (g_FinaleHandled && g_State == QueueState_Delay && g_hAdvanceTimer == null)
+	else if (g_FinaleHandled && g_State == QueueState_Delay && g_hAdvanceTimer == null && !g_WaitingForHumans)
 		AdvanceQueue(true);
 }
 
@@ -223,51 +223,48 @@ int CountConnectedHumans()
 	return count;
 }
 
-bool IsTrulyEmpty()
+void WaitForQueuePlayers(bool fallback)
 {
-	if (CountConnectedHumans() > 0 || g_MapChanging)
-		return false;
-	int now = GetTime();
-	if (g_ReconnectDeadline > now)
-		return false;
-	if (g_SwitchPending && g_SwitchAttempts > 0 && g_SwitchDeadline > now)
-		return false;
-	return true;
-}
-
-void BeginReconnectGrace()
-{
-	delete g_hReconnectTimer;
-	g_ReconnectDeadline = GetTime() + RoundToCeil(g_cvReconnectGrace.FloatValue);
-	g_hReconnectTimer = CreateTimer(1.0, Timer_ReconnectGrace, g_MapSerial, TIMER_REPEAT);
-	if (IsAutomationActive())
-		LogMessage("[MapQueue] reconnect grace started: seconds=%.1f map_serial=%d connected=%d ingame=%d", g_cvReconnectGrace.FloatValue, g_MapSerial, CountConnectedHumans(), CountHumanPlayers());
-}
-
-Action Timer_ReconnectGrace(Handle timer, any data)
-{
-	if (timer != g_hReconnectTimer || data != g_MapSerial)
-		return Plugin_Stop;
-	g_hReconnectTimer = null;
-	CheckEmptyServer();
-	if (g_ReconnectDeadline == 0 || g_ShuttingDown || g_MapChanging)
-		return Plugin_Stop;
-	g_hReconnectTimer = timer;
-	return Plugin_Continue;
-}
-
-void CheckEmptyServer()
-{
-	if (g_ShuttingDown || g_MapChanging || !g_Initialized)
+	delete g_hAdvanceTimer;
+	if (g_WaitingForHumans)
 		return;
-	if (g_ReconnectDeadline != 0 && GetTime() >= g_ReconnectDeadline)
-	{
-		g_ReconnectDeadline = 0;
-		delete g_hReconnectTimer;
-		LogMessage("[MapQueue] reconnect grace expired: map_serial=%d connected=%d ingame=%d", g_MapSerial, CountConnectedHumans(), CountHumanPlayers());
-	}
-	if (IsAutomationActive() && IsTrulyEmpty())
-		StopForEmptyServer();
+	g_WaitingForHumans = true;
+	g_WaitingFallback = fallback;
+	LogMessage("[MapQueue] waiting for players: active=%s pending=%d map_serial=%d op=%d connected=%d ingame=%d",
+		g_HasActive ? g_Active.map : "-", g_Queue.Length, g_MapSerial, g_OperationSerial, CountConnectedHumans(), CountHumanPlayers());
+}
+
+void QueuePlayerResume()
+{
+	if (!g_WaitingForHumans || g_PlayerResumeQueued || !g_Initialized || !g_cvEnable.BoolValue
+		|| g_ShuttingDown || g_MapChanging || !g_ModeReady || CountHumanPlayers() == 0)
+		return;
+	g_PlayerResumeQueued = true;
+	DataPack pack = new DataPack();
+	pack.WriteCell(g_MapSerial);
+	pack.WriteCell(g_OperationSerial);
+	RequestFrame(Frame_ResumeQueueForPlayers, pack);
+}
+
+void Frame_ResumeQueueForPlayers(any data)
+{
+	DataPack pack = view_as<DataPack>(data);
+	pack.Reset();
+	int mapSerial = pack.ReadCell();
+	int operationSerial = pack.ReadCell();
+	delete pack;
+	if (mapSerial != g_MapSerial || operationSerial != g_OperationSerial)
+		return;
+	g_PlayerResumeQueued = false;
+	if (!g_WaitingForHumans || !g_Initialized || !g_cvEnable.BoolValue || g_ShuttingDown
+		|| g_MapChanging || !g_ModeReady || CountHumanPlayers() == 0)
+		return;
+	LogMessage("[MapQueue] players returned: map_serial=%d op=%d connected=%d ingame=%d",
+		g_MapSerial, g_OperationSerial, CountConnectedHumans(), CountHumanPlayers());
+	if (g_State == QueueState_Delay)
+		AdvanceQueue(g_WaitingFallback);
+	else if (g_State == QueueState_Running && g_SwitchPending && g_SwitchAttempts == 0)
+		SwitchToActiveMap(g_SwitchAllowEmpty, g_SwitchFallback);
 }
 
 void LogQueueStop(const char[] reason)
