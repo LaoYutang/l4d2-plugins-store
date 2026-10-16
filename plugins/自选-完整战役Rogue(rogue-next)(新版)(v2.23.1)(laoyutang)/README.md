@@ -1,4 +1,4 @@
-# 完整战役 Rogue（rogue-next）2.23.0
+# 完整战役 Rogue（rogue-next）2.23.1
 
 作者：laoyutang。适用于 L4D2 完整战役合作模式。
 
@@ -57,7 +57,7 @@ III级专属「恶魔契约」每层额外提供每杀+2%伤害、-2个百分点
 
 II级专属「灵魂汲取」每层每次有效特感击杀回复5实血，最多回到本人血量上限。获得前的击杀不补回血，倒地、挂边和死亡时不回血，也不积攒补发；攻击方式不限。
 
-艺术家的榴弹初始基础伤害300、爆炸半径100。每弹跳一次降低当前基础伤害20%，依次为300、240、192、153.6；首次爆炸不衰减。首次碰撞爆炸后，默认还能弹跳1次；撞地面、墙壁、顶面、门和实物均爆炸并消耗本分支次数，弹体穿过人物。II级「乒乓球」每层弹跳次数+1，III级「大场面」每层分裂概率+20个百分点、弹跳次数-1。实际弹跳最低0，但负值保留：两层大场面使弹跳为-1，之后第一层乒乓球只抵扣到0，第二层才恢复1次弹跳。分裂概率直接加算，可以超过100%，不乘元素大师或强运的概率倍率。每满100%必定额外增加1颗，剩余百分点再决定是否多增加1颗；弹数包含原弹。
+艺术家的榴弹初始基础伤害300、爆炸半径100。每弹跳一次降低当前基础伤害20%，依次为300、240、192、153.6；首次爆炸不衰减。首次碰撞爆炸后，默认还能弹跳1次；撞地面、墙壁、顶面、门和实物均爆炸并消耗本分支次数，弹体穿过人物。II级「乒乓球」每层弹跳次数+1，III级「大场面」每层分裂概率+20个百分点，默认不减少弹跳次数。服主可配置每层扣减次数；设为大于0时启用扣减，实际弹跳最低0，负值保留供后续乒乓球抵扣。分裂概率直接加算，可以超过100%，不乘元素大师或强运的概率倍率。每满100%必定额外增加1颗，剩余百分点再决定是否多增加1颗；弹数包含原弹。
 
 II级「艺术」为元素大师和艺术家共用的爆炸范围属性，每层+100；同时作用于本人榴弹和本人引爆的冰火爆炸。两者初始半径分别100和300，一层艺术后分别为200和400，最终上限均16384。其他职业及BOT没有榴弹弹跳、分裂或艺术范围加成；元素大师可以用艺术提高榴弹范围。
 
@@ -230,7 +230,7 @@ IV级共用专属「派大星」每层爆炸伤害+100%、爆炸半径+100%，�
 | 恶魔契约 | 史诗（III）·死神专属 | 每层额外增加每次特感击杀2%伤害、减少2个百分点伤害减免，获得时按本战役本人累计击杀即时重算 |
 | 灵魂汲取 | 稀有（II）·死神专属 | 每层每次特感击杀回复5实血，最多到血量上限；仅站立存活时生效，不追补历史击杀 |
 | 乒乓球 | 稀有（II）·艺术家专属 | 榴弹弹跳次数 +1，先抵扣预存负值 |
-| 大场面 | 史诗（III）·艺术家专属 | 榴弹分裂概率 +20 个百分点，弹跳次数 -1；实际最低0，负值预存供后续抵扣 |
+| 大场面 | 史诗（III）·艺术家专属 | 榴弹分裂概率 +20 个百分点，默认不减少弹跳次数 |
 | biabiabia | 普通（I） | 枪械伤害 +15%，与士兵成长、元素枪伤减益和全伤统一加算 |
 | 派大星 | 传说（IV）·除剑客外五职业共用专属 | 爆炸伤害 +100%、爆炸半径 +100%；作用于榴弹、冰火爆炸和爆裂子弹 |
 
@@ -367,7 +367,7 @@ Tank 和 Witch 的额外血量分别设置，人数包含 BOT 和死亡后仍留
 
 内置HUD复用服务器已有的 **Source Scramble扩展和加载器、EMS HUD补丁gamedata及补丁配置**，这些文件由其他插件提供，Rogue包不重复附带。请确认已有依赖与服务器版本、架构匹配，并已加载 `gamedata/l4d2_ems_hud_sig.txt` 和 `configs/sourcescramble/l4d2_ems_hud_patch.txt`。
 
-1. 在新战役开始前安装。若服务器已加载 `rogue_buff.smx` 或 `rogue_random_map.smx`，先停用旧插件并保留备用。
+1. 在新战役开始前安装。若服务器已加载 `rogue_buff.smx`、`rogue_random_map.smx`，或独立测试插件 `l4d2_grenade_bounce_demo.smx`、`l4d2_blade_wave_demo.smx`，先停用并移出启用目录，保留备用。
 2. 解压发布包，把插件名称目录内的 `left4dead2/` 合并到服务器的 `left4dead2/`。使用插件面板时，可直接导入 ZIP。
 3. 在服务器控制台执行 `sm plugins list`，确认 `rogue_next` 和 `Source Scramble Manager` 已加载；执行 `sm exts list`，确认 `Source Scramble` 扩展正常。
 4. 玩家使用聊天指令或自行绑定按键即可开始。
@@ -378,68 +378,11 @@ Tank 和 Witch 的额外血量分别设置，人数包含 BOT 和死亡后仍留
 
 发布包仅包含本说明、`rogue_next.smx` 和 `rogue_next.cfg`，共3个文件。安装或升级时合并包内的 `left4dead2/`，HUD继续使用服务器现有依赖。
 
-### 从 Demo 或旧版升级
-
-2.23.0增加狙神和艺术家在重连、死亡复活后的缺枪补发，正常过图不补发，已有合适武器时保留。沿用 `rne_sniper_start_weapon` 和 `rne_magician_start_weapon` 的现有数值，无需新增配置；替换SMX后切图或重载插件，保留其他自定义设置。
-
-2.22.0将嗜血狂战改为每层每次击杀特感回复5实血，包含Tank，攻击方式不限。已有 `rne_berserker_heal` 的数值继续生效，无需新增配置；替换SMX后切图或重载插件，保留其他自定义设置。
-
-2.20.0将榴弹发射器加入全队换弹加成，沿用既有「搞快点」配置。无需新增配置，替换SMX并加载新版即可采用。
-
-2.19.0将分裂改为每100%必定多1颗、余数概率再多1颗，分裂概率可以超过100%。旧固定弹数配置 `rne_grenade_split_count` 已停用，可删除该行；其余配置键与默认值保持。替换SMX并加载新版即可采用新规则。
-
-2.18.1将第六职业更名为艺术家，并调整四项枪伤默认值。采用新默认时，在现有cfg中修改以下四项，保留其他自定义设置；加载新SMX后执行 `exec sourcemod/rogue_next.cfg`。只替换SMX不会覆盖旧cfg数值。
-
-```text
-rne_biabiabia_gun_damage "0.15"
-rne_pyromaniac_dmgreduction_surv "0.15"
-rne_cryophilia_dmgreduction_surv "0.15"
-rne_dual_element_damage_reduction "0.30"
-```
-
-2.18.0新增I级biabiabia（枪械伤害+10%）与IV级派大星（爆炸伤害、半径各+100%）。保留现有cfg与自定义值，补入下方三项新配置，加载新SMX后执行 `exec sourcemod/rogue_next.cfg`。
-
-2.17.1统一使用“弹跳”“弹跳次数”等表述，职业、BUFF和属性说明同步。配置键和数值保持，替换SMX后重载或切图即可，无需新增配置。
-
-2.17.0将榴弹初始基础伤害提高到300，并增加每次弹跳20%的伤害衰减。保留服务器旧cfg时，将 `rne_grenade_damage` 改为 `300`，补入 `rne_grenade_bounce_damage_decay "0.20"`；加载新SMX后执行 `exec sourcemod/rogue_next.cfg`。只替换SMX不会覆盖旧cfg中的100或其他自定义伤害值。
-
-2.16.0新增艺术家、乒乓球和大场面，艺术保留原卡并由艺术家与元素大师共用。榴弹现在也接受枪械加成与代价，其他职业仍无弹跳或分裂。安装前执行 `sm plugins unload l4d2_grenade_bounce_demo`，将测试版SMX移到服务器的 `plugins/disabled/`，避免两个插件同时接管榴弹；独立测试插件的旧配置可以保留。
-
-保留服务器已有cfg及自定义值，从新包补齐下方15项榴弹和艺术家设置；原 `rne_art_explosion_radius_bonus` 继续共用，无需新增艺术键。加载新SMX后执行 `exec sourcemod/rogue_next.cfg`。已选择其他职业的本战役玩家不会自动转职，新战役或管理员重置后可选择艺术家。
-
-2.15.4将士兵职业成长和日常训练并入枪械伤害加算，与通用增伤及元素卡枪伤代价统一计算；`!buff` 显示合计枪械伤害加成。替换SMX后切图或重载插件即可，现有配置键和数值保留，无需新增配置。
-
-2.15.3将纵火狂、多冻症、冰火两重天的伤害代价改为只降低枪械直接射击伤害，近战、投掷物和元素火伤恢复完整输出。默认扣减比例、配置键和服务器自定义数值保留；替换SMX后切图或重载插件，无需新增配置。
-
-2.14.4改为剑气命中时立即结算，允许同一挥砍的近战与剑气分别命中同一目标。替换SMX后切图或重载插件，本次无需新增配置。
-
-2.14.3仅把纵火狂每层基础灼烧增量改为25点/秒，点燃概率和直接攻击代价保持。保留服务器旧cfg时，将 `rne_pyromaniac_burn_dps_surv` 改为 `25`，加载新SMX后执行配置；只替换SMX不会覆盖旧cfg，保留其他自定义设置。
-
-2.14.2略微加宽HUD伤害列，用于显示123.4M等六字符数值。替换SMX后切图或重载插件，无需新增配置。
-
-2.14.1曾修复嗜血狂战的近战击杀回血；从2.22.0起已改为特感击杀回血，以当前BUFF说明为准。
-
-从2.12.2升级后，请在替换SMX后切换一次地图，加载新版本并清除之前已残留的剑气特效。2.12.3修复剑气撞墙、达到最大距离或用尽命中次数后特效一直存在的问题；该特效修复无需新增配置。
-
-先在服务器控制台执行 `sm plugins unload l4d2_blade_wave_demo`，再删除服务器上的 `addons/sourcemod/plugins/l4d2_blade_wave_demo.smx` 和 `cfg/sourcemod/l4d2_blade_wave_demo.cfg`，然后安装本包。旧 Demo 不再使用；服务器上的 Demo 需要由服主移除。
-
-旧刀客档案直接对应剑客，无需重选职业。合并旧配置时将 `rne_blademaster_attack_speed_bonus` 改为 `0.20`，删除已停用的 `rne_blademaster_control_chance`，补齐下方八项剑气设置；默认 `rne_sword_wave_max_hits "1"`。直接保留旧的 `0.30` 或 `0.50` 会继续使用30%或50%攻速，请保留其他需要的自定义设置。替换SMX后切图或重载插件以加载新版本，再执行配置。
-
-2.12.1 修复了同次挥刀被重复加速的问题。2.13.0调整剑客平衡；只替换SMX不会覆盖服务器已有的攻速、距离和速度设置。采用本版默认值时，修改这三项，并补入伤害继承比例及纵横每层距离；再执行 `exec sourcemod/rogue_next.cfg`：
-
-~~~text
-rne_blademaster_attack_speed_bonus "0.20"
-rne_sword_wave_range "300"
-rne_sword_wave_speed "1100"
-rne_sword_wave_damage_factor "0.60"
-rne_sword_reach_distance "100"
-~~~
-
-服务器控制台执行 `sm_cvar rne_blademaster_attack_speed_bonus` 可查看当前生效值；采用上述配置且没有欧拉欧拉、剑气纵横时，`!buff` 应显示近战攻速 +20%、剑气距离300码及伤害60%近战。
-
 ### 调整配置
 
 所有设置集中在 `cfg/sourcemod/rogue_next.cfg`，可调整职业、初始选择、升级节奏、经验、BUFF 数值、抽卡权重、时间难度、内置排行榜、伤害排名、Tank 强化、进服帮助和选卡条件。各项配置带有用途及默认值说明。
+
+保留已有自定义设置，并参照随包cfg补齐缺失项。只替换SMX不会覆盖现有cfg；若要采用某项默认值，请修改对应配置值。
 
 修改后，在服务器控制台执行：
 
@@ -594,7 +537,7 @@ rne_fanxing_choices "10"
 | `rne_magician_split_chance` | `10` | 艺术家榴弹初始分裂概率，百分点；每100%必定多1颗，余数概率再多1颗 |
 | `rne_pingpong_bounces` | `1` | 乒乓球每层增加的榴弹弹跳次数，先抵扣大场面预存负值 |
 | `rne_big_scene_split_chance` | `20` | 大场面每层增加的榴弹分裂概率，百分点；可超过100%，末次碰撞不分裂 |
-| `rne_big_scene_bounce_penalty` | `1` | 大场面每层扣减的榴弹弹跳次数；实际最低0，保留负值供后续抵扣 |
+| `rne_big_scene_bounce_penalty` | `0` | 大场面每层扣减的榴弹弹跳次数；0不扣减，大于0时启用；实际最低0，负值预存供后续抵扣 |
 
 初始基础伤害、弹跳伤害衰减、范围和分裂运动参数适用于全部受控榴弹；弹跳、分裂概率及两张新卡只对艺术家生效。`rne_art_explosion_radius_bonus` 同时增加榴弹和元素爆炸半径。伤害和衰减更改按当前分支已弹跳的次数作用于之后的碰撞，已结算伤害不重算；降低次数会结束已达到新上限的分支，提高次数不恢复已结束的弹体。
 
@@ -627,38 +570,6 @@ biabiabia可由所有职业获得；派大星由士兵、元素大师、狙神�
 | `rne_element_explosion_radius` | `300` | 爆炸半径，游戏单位；0 不触发 |
 | `rne_element_explosion_splash_factor` | `0.5` | 周边余火伤害倍率，0～1；中心始终完整结算，0 无周边伤害，1 全额 |
 
-### 从旧版本升级
-
-升级2.11.1时，章节和终章自动聊天榜已移除；请合并包内的完整 `left4dead2/` 目录，将HUD依赖一起安装。保留已有cfg和自定义值，本次没有新增配置。
-
-从2.10.x及更早版本升级时，补上 `rne_hud_enable "1"` 和 `rne_hud_top "15"`，内置排行榜默认开启。`rne_damage_stats_top` 仅控制管理员查询人数，屏幕排行榜使用 `rne_hud_top`。
-
-升级2.10.0时可补上 `rne_element_explosion_crit_enable "1"`，设为 `0` 关闭冰火爆炸暴击。爆炸暴击沿用现有暴击BUFF和倍率配置。
-
-升级2.9.0时可补上 `rne_blademaster_disarm_immunity "1"`，设为 `0` 关闭剑客抗缴械。开启后当前剑客立即生效，无需重新选择职业。
-
-升级2.8.0时可补上 `rne_sniper_start_weapon "1"`，设为 `0` 关闭狙神赠枪。从2.23.0起，此键同时控制首次赠枪及之后重连、死亡复活时的缺枪补发；热开不会立即发枪。
-
-从2.6.x升级到2.7.0时，在配置中补入 `rne_fanxing_percent "130"`。原 `rne_fanxing_choices` 改为最低额外增加次数，默认仍为 `10`；其他自定义设置可继续使用。
-
-若安装过临时过图聊天测试插件，请先在服务器控制台执行 `sm plugins unload rogue_chat_probe`，并删除 `addons/sourcemod/plugins/rogue_chat_probe.smx`。
-
-采用2.5.1的狙神默认数值时，将 `rne_sniper_damage_per_100_units` 和 `rne_exposed_damage_per_100_units` 均设为 `0.15`。最大距离仍为2,000，我起了仍为每层+30%；只更新SMX不会覆盖已有cfg中的旧值。
-
-从2.4.0升级并保留旧cfg时，可补入 `rne_damage_stats_enable "1"` 和 `rne_damage_stats_top "5"`。不覆盖原有自定义设置。
-
-从2.3.x及更早版本升级时，补齐上表中日常训练、坚韧、爆裂子弹的四项配置，保留其他自定义设置。
-
-若采用当前时间难度默认值，将 `rne_hp_per_tier`（血量）和 `rne_dmg_per_tier`（伤害）均改为 `0.25`。两项可分别调整，适用于普通感染者、特感、Tank 和 Witch；只更新插件不会覆盖已有配置。
-
-升级时保留已有自定义设置，并从新配置补齐缺失项目。从 2.2.x 升级需补入 `rne_neverfall_protection_time "1.0"`，启用默认的读档起身保护。若采用当前元素默认值，将 `rne_ignite_base_dps` 改为 `50`，并补入 `rne_element_explosion_splash_factor "0.5"`。更早版本还需补齐职业、火焰、四档初始选择和 Witch 设置。
-
-从 2.1.3 升级时，补齐上表中的职业与专属 BUFF 设置；若采用当前职业默认值，将士兵枪伤、剑客攻速、狙神距离伤害分别改为 `0.05`、`0.20`、`0.15`，露头就秒距离伤害改为 `0.15`，爆炸基础半径改为 `300`。旧 `rne_sniper_max_damage_bonus` 停用，改为 `rne_sniper_max_distance "2000"`；保留其他自定义配置。
-
-旧的 `rne_initial_choices` 已由四档初始选择替代。`rne_magazinemultiple_surv`、`rne_auto_bind` 和 `rne_doubletap_ms` 已停用，可从旧配置删除。若采用当前默认火焰概率，将 `rne_probignite_surv` 和 `rne_pyromaniac_probignite_surv` 均设为 `2`；自定义概率可以继续保留。从2.7.2之前升级时，补上该版新增的 `rne_pyromaniac_burn_dps_surv "25"`，采用当前默认值；旧的 `rne_probignite_burn_dps_surv` 和 `rne_pyromaniac_burn_bonus_surv` 已停用，可删除。
-
-旧 buff 插件的配置需要参照新配置逐项迁移。已有 `sm_rn_k` / `sm_rn_l` 手动绑定仍可单击使用。
-
 ### 管理员指令
 
 以下指令需要最高管理员权限，可在服务器控制台使用：
@@ -679,16 +590,3 @@ biabiabia可由所有职业获得；派大星由士兵、元素大师、狙神�
 若HUD不显示，先检查上述插件和扩展是否正常加载，并检查服务器控制台的EMS补丁验证信息及SourceMod错误日志；签名不匹配时需更新到适合当前游戏版本的gamedata。
 
 Charger 免控日志位于 `addons/sourcemod/logs/rogue_next_charger.log`，元素日志位于 `addons/sourcemod/logs/rogue_next_elements.log`。
-
-## 升级到2.15.0
-
-新增死神及从心、恶魔契约、灵魂汲取，默认职业与BUFF数分别为5和61。保留旧cfg时补入下列六项；既有162项默认值保持，不覆盖服务器自定义设置。天赋与恶魔契约的伤害和惩罚可以分别调整，热改立即重算当前累计成长，已经开始的灼烧保留原伤害快照。关闭伤害统计后特感仍累计。
-
-~~~text
-rne_reaper_damage_per_kill "0.02"
-rne_reaper_penalty_per_kill "0.02"
-rne_demon_contract_damage_per_kill "0.02"
-rne_demon_contract_penalty_per_kill "0.02"
-rne_congxin_penalty_reduction "0.10"
-rne_soul_drain_heal "5"
-~~~
