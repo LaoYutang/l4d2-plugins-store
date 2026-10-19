@@ -1,0 +1,25 @@
+// Reference vtable offsets from WeaponHandling 1.0.6 (Lux), L4D2 section.
+// Source: https://forums.alliedmods.net/showthread.php?p=2674761
+// Internal Rogue fallback targets L4D2 x86. These offsets remain subject to
+// runtime verification on each server build; WH forward use does not load them.
+// No x64 support is claimed. Game updates may invalidate these vtable offsets.
+// These are virtual hooks, NOT byte signatures / DynamicDetour function entries.
+"Games"
+{
+    "left4dead2"
+    {
+        "Offsets"
+        {
+            "CTerrorWeapon::GetReloadDurationModifier"
+            {
+                "linux"     "359"
+                "windows"   "358"
+            }
+            "CTerrorGun::GetRateOfFire"
+            {
+                "linux"     "454"
+                "windows"   "452"
+            }
+        }
+    }
+}
