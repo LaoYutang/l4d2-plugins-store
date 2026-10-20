@@ -85,6 +85,7 @@ ConVar
   g_cBaseLimit,
   g_cExtraLimit,
   g_cReservedSlots,
+  g_cSpawnEnabled,
   g_cTankStatusAction,
   g_cTankStatusLimits,
   g_cTankStatusWeights,
