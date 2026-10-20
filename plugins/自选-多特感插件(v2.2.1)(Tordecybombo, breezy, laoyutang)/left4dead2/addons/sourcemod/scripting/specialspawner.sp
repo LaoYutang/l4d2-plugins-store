@@ -141,7 +141,8 @@ bool
   g_bInSpawnTime,
   g_bScaleWeights,
   g_bLeftSafeArea,
-  g_bFinaleStarted;
+  g_bFinaleStarted,
+  g_bSpawnEnabled = true;
 
 public Plugin myinfo =
 {
@@ -238,6 +239,10 @@ public void OnPluginStart()
   RegAdminCmd("sm_resetspawn", cmdResetSpawn, ADMFLAG_RCON, "处死所有特感并重新开始生成计时");
   RegAdminCmd("sm_forcetimer", cmdForceTimer, ADMFLAG_RCON, "开始生成计时");
   RegAdminCmd("sm_type", cmdType, ADMFLAG_ROOT, "随机轮换模式");
+
+  RegAdminCmd("sm_ss", cmdToggleSpawn, ADMFLAG_RCON, "开关多特功能");
+
+  LoadSpawnState();
 
   HookEntityOutput("trigger_finale", "FinaleStart", OnFinaleStart);
 }
@@ -341,7 +346,8 @@ public void L4D_OnFirstSurvivorLeftSafeArea_Post(int client)
   else if (g_iCurrentClass > -1)
     PrintToChatAll("\x01[\x05%s\x01]\x04模式\x01", g_sZombieClass[g_iCurrentClass]);
 
-  StartCustomSpawnTimer(g_fFirstSpawnTime);
+  if (g_bSpawnEnabled)
+    StartCustomSpawnTimer(g_fFirstSpawnTime);
   delete g_hSuicideTimer;
   g_hSuicideTimer = CreateTimer(2.5, tmrForceSuicide, _, TIMER_REPEAT);
 }
@@ -1139,6 +1145,48 @@ void ResetWeights()
     g_cSpawnWeights[i].RestoreDefault();
 }
 
+Action cmdToggleSpawn(int client, int args)
+{
+  g_bSpawnEnabled = !g_bSpawnEnabled;
+  SaveSpawnState();
+
+  char msg[64];
+  Format(msg, sizeof msg, "\x01[\x05多特\x01] %s", g_bSpawnEnabled ? "\x04已开启" : "\x01已关闭");
+  PrintToChatAll(msg);
+
+  if (g_bSpawnEnabled && g_bLeftSafeArea)
+    StartSpawnTimer();
+  else if (!g_bSpawnEnabled)
+    EndSpawnTimer();
+
+  return Plugin_Handled;
+}
+
+void SaveSpawnState()
+{
+  char path[PLATFORM_MAX_PATH];
+  BuildPath(Path_SM, path, sizeof path, "data/specialspawner_state.txt");
+
+  KeyValues kv = new KeyValues("SpecialSpawner");
+  kv.SetNum("spawn_enabled", g_bSpawnEnabled ? 1 : 0);
+  kv.ExportToFile(path);
+  delete kv;
+}
+
+void LoadSpawnState()
+{
+  char path[PLATFORM_MAX_PATH];
+  BuildPath(Path_SM, path, sizeof path, "data/specialspawner_state.txt");
+
+  if (!FileExists(path))
+    return;
+
+  KeyValues kv = new KeyValues("SpecialSpawner");
+  if (kv.ImportFromFile(path))
+    g_bSpawnEnabled = kv.GetNum("spawn_enabled", 1) != 0;
+  delete kv;
+}
+
 void StartCustomSpawnTimer(float time)
 {
   EndSpawnTimer();
@@ -1162,10 +1210,13 @@ Action tmrSpawnSpecial(Handle timer)
   g_hSpawnTimer = null;
   delete g_hRetryTimer;
 
-  int totalSI = GetTotalSI();
-  ExecuteSpawnQueue(totalSI);
+  if (g_bSpawnEnabled)
+  {
+    int totalSI = GetTotalSI();
+    ExecuteSpawnQueue(totalSI);
+    g_hSpawnTimer = CreateTimer(g_iSpawnTimeMode > 0 ? g_fSpawnTimes[totalSI] : Math_GetRandomFloat(g_fSpawnTimeMin, g_fSpawnTimeMax), tmrSpawnSpecial);
+  }
 
-  g_hSpawnTimer = CreateTimer(g_iSpawnTimeMode > 0 ? g_fSpawnTimes[totalSI] : Math_GetRandomFloat(g_fSpawnTimeMin, g_fSpawnTimeMax), tmrSpawnSpecial);
   return Plugin_Continue;
 }
 

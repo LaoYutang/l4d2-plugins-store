@@ -16,7 +16,7 @@
 队列始终按照“总上限 - 当前存活特感 - 已排队任务”补齐，不受客户端槽位限制。达到 `MaxClients - ss_reserved_slots` 后仅暂停实际生成，未生成的任务保留在队列中等待槽位释放。
 
 ## 可用指令
-
+- `sm_ss` 开关多特功能（管理员指令）
 - `sm_weight <类型> <比重>` 设置特感生成比重（管理员指令）
   - 类型：`reset`（重置默认）/ `all`（全部）/ `smoker` / `boomer` / `hunter` / `spitter` / `jockey` / `charger`
   - 比重：`>= 0` 的整数
