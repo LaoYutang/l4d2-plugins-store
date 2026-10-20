@@ -1,5 +1,9 @@
 /*
- * Special Spawner v2.2.1
+ * Special Spawner v2.2.2
+ *
+ * v2.2.2
+ * - 多特开关改为标准 ConVar(ss_spawn_enabled), 由 specialspawner.cfg 保存配置。
+ * - 移除 data/specialspawner_state.txt 独立状态文件读写, /ss 仅修改当前运行值。
  *
  * v2.2.1
  * - 刷特队列按总上限缺口完整入队，客户端预留槽位仅限制实际生成。
@@ -85,6 +89,7 @@ ConVar
   g_cBaseLimit,
   g_cExtraLimit,
   g_cReservedSlots,
+  g_cSpawnEnabled,
   g_cTankStatusAction,
   g_cTankStatusLimits,
   g_cTankStatusWeights,
@@ -141,14 +146,15 @@ bool
   g_bInSpawnTime,
   g_bScaleWeights,
   g_bLeftSafeArea,
-  g_bFinaleStarted;
+  g_bFinaleStarted,
+  g_bSpawnEnabled = true;
 
 public Plugin myinfo =
 {
   name        = "Special Spawner",
   author      = "Tordecybombo, breezy, laoyutang",
   description = "Provides customisable special infected spawing beyond vanilla coop limits",
-  version     = "2.2.1",
+  version     = "2.2.2",
 };
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
@@ -183,6 +189,7 @@ public void OnPluginStart()
   g_cBaseLimit                = CreateConVar("ss_base_limit", "4", "幸存者人数不超过ss_base_players时的特感总上限", _, true, 1.0, true, 32.0);
   g_cExtraLimit               = CreateConVar("ss_extra_limit", "1.0", "超过基准人数后, 每增加1名幸存者增加的特感上限, 可为小数", _, true, 0.0, true, 32.0);
   g_cReservedSlots            = CreateConVar("ss_reserved_slots", "2", "为新玩家连接预留的客户端槽位数量, 0=关闭", _, true, 0.0, true, 32.0);
+  g_cSpawnEnabled             = CreateConVar("ss_spawn_enabled", "1", "是否启用多特功能 [0 = 关闭 | 1 = 开启]", _, true, 0.0, true, 1.0);
   g_cTankStatusAction         = CreateConVar("ss_tankstatus_action", "1", "坦克产生后是否对当前刷特参数进行修改, 坦克死完后恢复?[0 = 忽略(保持原有的刷特状态) | 1 = 自定义]", _, true, 0.0, true, 1.0);
   g_cTankStatusLimits         = CreateConVar("ss_tankstatus_limits", "2;1;4;1;4;4", "坦克产生后每种特感数量的自定义参数");
   g_cTankStatusWeights        = CreateConVar("ss_tankstatus_weights", "100;400;100;200;100;100", "坦克产生后每种特感比重的自定义参数");
@@ -213,6 +220,7 @@ public void OnPluginStart()
   g_cBaseLimit.AddChangeHook(CvarChanged_General);
   g_cExtraLimit.AddChangeHook(CvarChanged_General);
   g_cReservedSlots.AddChangeHook(CvarChanged_General);
+  g_cSpawnEnabled.AddChangeHook(CvarChanged_SpawnEnabled);
   g_cSuicideTime.AddChangeHook(CvarChanged_General);
   g_cRushDistance.AddChangeHook(CvarChanged_General);
   g_cFirstSpawnTime.AddChangeHook(CvarChanged_General);
@@ -238,6 +246,8 @@ public void OnPluginStart()
   RegAdminCmd("sm_resetspawn", cmdResetSpawn, ADMFLAG_RCON, "处死所有特感并重新开始生成计时");
   RegAdminCmd("sm_forcetimer", cmdForceTimer, ADMFLAG_RCON, "开始生成计时");
   RegAdminCmd("sm_type", cmdType, ADMFLAG_ROOT, "随机轮换模式");
+
+  RegAdminCmd("sm_ss", cmdToggleSpawn, ADMFLAG_RCON, "开关多特功能");
 
   HookEntityOutput("trigger_finale", "FinaleStart", OnFinaleStart);
 }
@@ -341,7 +351,8 @@ public void L4D_OnFirstSurvivorLeftSafeArea_Post(int client)
   else if (g_iCurrentClass > -1)
     PrintToChatAll("\x01[\x05%s\x01]\x04模式\x01", g_sZombieClass[g_iCurrentClass]);
 
-  StartCustomSpawnTimer(g_fFirstSpawnTime);
+  if (g_bSpawnEnabled)
+    StartCustomSpawnTimer(g_fFirstSpawnTime);
   delete g_hSuicideTimer;
   g_hSuicideTimer = CreateTimer(2.5, tmrForceSuicide, _, TIMER_REPEAT);
 }
@@ -816,6 +827,7 @@ void CvarChanged_General(ConVar convar, const char[] oldValue, const char[] newV
 void GetCvars_General()
 {
   g_bScaleWeights = g_cScaleWeights.BoolValue;
+  g_bSpawnEnabled = g_cSpawnEnabled.BoolValue;
 
   for (int i; i < SI_MAX_SIZE; i++)
     g_iSpawnWeights[i] = g_cSpawnWeights[i].IntValue;
@@ -1139,6 +1151,30 @@ void ResetWeights()
     g_cSpawnWeights[i].RestoreDefault();
 }
 
+Action cmdToggleSpawn(int client, int args)
+{
+  g_cSpawnEnabled.BoolValue = !g_bSpawnEnabled;
+
+  char msg[64];
+  Format(msg, sizeof msg, "\x01[\x05多特\x01] %s", g_cSpawnEnabled.BoolValue ? "\x04已开启" : "\x01已关闭");
+  PrintToChatAll(msg);
+
+  return Plugin_Handled;
+}
+
+void CvarChanged_SpawnEnabled(ConVar convar, const char[] oldValue, const char[] newValue)
+{
+  GetCvars_General();
+
+  if (!g_bConfigsLoaded)
+    return;
+
+  if (g_bSpawnEnabled && g_bLeftSafeArea)
+    StartSpawnTimer();
+  else if (!g_bSpawnEnabled)
+    EndSpawnTimer();
+}
+
 void StartCustomSpawnTimer(float time)
 {
   EndSpawnTimer();
@@ -1162,10 +1198,13 @@ Action tmrSpawnSpecial(Handle timer)
   g_hSpawnTimer = null;
   delete g_hRetryTimer;
 
-  int totalSI = GetTotalSI();
-  ExecuteSpawnQueue(totalSI);
+  if (g_bSpawnEnabled)
+  {
+    int totalSI = GetTotalSI();
+    ExecuteSpawnQueue(totalSI);
+    g_hSpawnTimer = CreateTimer(g_iSpawnTimeMode > 0 ? g_fSpawnTimes[totalSI] : Math_GetRandomFloat(g_fSpawnTimeMin, g_fSpawnTimeMax), tmrSpawnSpecial);
+  }
 
-  g_hSpawnTimer = CreateTimer(g_iSpawnTimeMode > 0 ? g_fSpawnTimes[totalSI] : Math_GetRandomFloat(g_fSpawnTimeMin, g_fSpawnTimeMax), tmrSpawnSpecial);
   return Plugin_Continue;
 }
 
