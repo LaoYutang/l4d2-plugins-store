@@ -1,4 +1,4 @@
-# 完整战役 Rogue（rogue-next）2.24.4
+# 完整战役 Rogue（rogue-next）2.24.5
 
 作者：laoyutang。适用于 L4D2 完整战役合作模式。本说明供服务器管理员安装、配置插件及向玩家介绍玩法时使用。
 
