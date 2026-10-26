@@ -472,21 +472,6 @@ Tank 和 Witch 的额外血量分别设置，人数包含 BOT 和死亡后仍留
 
 全部212项活动设置集中在随包提供的 `left4dead2/cfg/sourcemod/rogue_next.cfg`，包括职业、选择次数、经验、BUFF、抽卡权重、时间难度、排行榜及选卡条件。各项用途、默认值和取值限制以配置文件注释为准。
 
-升级前请备份现有配置。榴弹基础爆炸半径默认150游戏单位；保留旧cfg时，如需采用此默认值，将 `rne_grenade_radius "150"` 写入并重新执行配置。该项也供其他职业使用Rogue榴弹时共用，不改变艺术每层+100及冰火、爆裂子弹或受难爆发的基础范围。只替换SMX不会覆盖服务器保留的旧cfg；如要使用本说明的默认值，请将纵火狂、多冻症、五连鞭的枪伤代价改为0.10，并补齐元素共鸣和亲和的三项设置：
-
-~~~text
-rne_pyromaniac_dmgreduction_surv "0.10"
-rne_cryophilia_dmgreduction_surv "0.10"
-rne_five_whip_gun_cost "0.10"
-rne_elementalist_share_factor "0.50"
-rne_element_affinity_chance "6"
-rne_element_affinity_gun_cost "0.20"
-~~~
-
-旧配置中的 `rne_elementalist_probability_bonus`、`rne_dual_element_ignite_chance`、`rne_dual_element_freeze_chance` 和 `rne_dual_element_damage_reduction` 已停用，可删除。元素亲和的随机结果与本战役成长一同保存，正常换章继续保留；重新加载插件或重启服务器仍按原有限制重新开始成长，不提供旧战役档案的自动迁移。
-
-旧配置中的 `rne_knight_counter_timeout` 已停用，可删除该行；保留任意值也不会恢复受难计数超时清零。
-
 修改后，在服务器控制台执行：
 
 ~~~text
