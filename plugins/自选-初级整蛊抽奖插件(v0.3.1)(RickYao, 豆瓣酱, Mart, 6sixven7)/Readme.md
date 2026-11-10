@@ -339,3 +339,9 @@ draw_normal_weight_first_aid_kit "40"
 旧Explosion Announcer同时加载会重复提示，本插件不依赖其运行。
 同一物品的OnKilled与break_prop内部合并一次，连锁爆炸和自定义模型归属需实服核对。
 所需编译include已在包内，运行仍依赖服务器安装Left 4 DHooks及匹配gamedata。
+
+参考来源
+L4D2_Lucky_Drawv.sp：用户提供，原文件没有明确作者信息。
+L4D2 Tank Draw：Rick Yao，https://github.com/rick-yao/L4d2-plugin
+l4d2_saferoomdoor：豆瓣酱な。
+Explosion Announcer：Mart，https://forums.alliedmods.net/showthread.php?t=328006
