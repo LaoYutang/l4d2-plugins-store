@@ -3,16 +3,17 @@
 #pragma newdecls required
 #include <sourcemod>
 //原作者版本号v1.0.3
-#define PLUGIN_VERSION 				"1.0.4"
+#define PLUGIN_VERSION 				"1.1.0"
 #define INFECTED_NAMES 				6
 #define WITCH_LEN 					32
+#define GAUGE_RECENT_SECONDS		2.0
 #define CVAR_FLAGS 					FCVAR_NOTIFY
 #define CVAR_FLAGS_PLUGIN_VERSION 	FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY
 
 public Plugin myinfo =
 {
 	name 		= "[L4D1 AND L4D2] Infected HP",
-	author 		= "NiCo-op, Edited By Ernecio (Satanael)",
+	author 		= "NiCo-op, Edited By Ernecio (Satanael), laoyutang",
 	description = "L4D Infected HP",
 	version 	= PLUGIN_VERSION,
 	url 		= "http://nico-op.forjp.net/"
@@ -35,8 +36,6 @@ int witchCUR = 0;
 int witchMAX[WITCH_LEN];
 int witchHP[WITCH_LEN];
 int witchID[WITCH_LEN];
-int prevMAX[MAXPLAYERS+1];
-int prevHP[MAXPLAYERS+1];
 int nCharLength;
 int nShowType;
 int nShowNum;
@@ -46,6 +45,18 @@ int nShowFlag[INFECTED_NAMES];
 
 char sCharHealth[8] = "#";
 char sCharDamage[8] = "=";
+
+// 只有最近击中此坦克、已获血条的真人会收到一次回复刷新。刷新本身不续期。
+enum struct GaugeView
+{
+	int viewerSerial;
+	int target;
+	int targetSerial;
+	int targetRef;
+	int channel;
+	float until;
+}
+GaugeView g_LastGauge[MAXPLAYERS + 1];
 
 char sClassName[][] = 
 {
@@ -62,7 +73,7 @@ public void OnPluginStart()
 	CreateConVar("l4d2_infectedhp_version", PLUGIN_VERSION, "特感血条插件的版本.", CVAR_FLAGS_PLUGIN_VERSION );
 	hPluginEnable 	= CreateConVar("l4d2_infectedhp", 				"1", 		"启用插件? 0=禁用, 1=启用.", CVAR_FLAGS);
 	hPluginTank		= CreateConVar("l4d2_infectedhp_a",				"1",		"启用坦克卡死提示? 0=禁用, 1=聊天窗, 2=屏幕中下+聊天窗, 3=屏幕中下.", CVAR_FLAGS);
-	hBarLEN 		= CreateConVar("l4d2_infectedhp_bar", 			"70", 		"生命条长度(默认100). 最小:10 / 最大:200", CVAR_FLAGS);
+	hBarLEN 		= CreateConVar("l4d2_infectedhp_bar", 			"70", 		"生命条长度，默认70格。", CVAR_FLAGS);
 	hCharHealth 	= CreateConVar("l4d2_infectedhp_health", 		"|", 		"设置血量符号.", CVAR_FLAGS );
 	hCharDamage 	= CreateConVar("l4d2_infectedhp_damage", 		" ", 		"设置去血符号.", CVAR_FLAGS );
 	hShowType 		= CreateConVar("l4d2_infectedhp_type", 			"0", 		"设置血条的显示位置和类型. 0=屏幕中心 1=屏幕中下.", CVAR_FLAGS);
@@ -95,6 +106,11 @@ public void OnPluginStart()
 //	HookEvent("tank_killed", 	OnInfectedDeath, EventHookMode_Pre);
 
 	AutoExecConfig(true, "l4d2_infected_hp");
+}
+
+public void OnConfigsExecuted()
+{
+	GetConfig();
 }
 
 void GetConfig()
@@ -153,6 +169,7 @@ void ShowHealthGauge(int client, int maxBAR, int maxHP, int nowHP, char[] clName
 
 public void OnRoundStart(Event event, const char[] sName, bool bDontBroadcast)
 {
+	ClearGaugeViews();
 	nShowTank = 0;
 	nShowWitch = 0;
 	witchCUR = 0;
@@ -163,46 +180,40 @@ public void OnRoundStart(Event event, const char[] sName, bool bDontBroadcast)
 		witchID[i] = -1;
 
 	}
-	for(int i = 0; i < MAXPLAYERS + 1; i ++)
-	{
-		prevMAX[i] = -1;
-		prevHP[i] = -1;
-	}
-}
-
-public Action TimerSpawn(Handle timer, any client)
-{
-	if(IsValidEntity(client))
-	{
-		int val = GetEntProp(client, Prop_Data, "m_iMaxHealth");
-		prevMAX[client] = ( val <= 0 ) ? val : 1;
-		prevHP[client] = 999999;
-	}
-	return Plugin_Stop;
 }
 
 public void OnInfectedSpawn(Event hEvent, const char[] sName, bool bDontBroadcast)
 {
-	GetConfig();
-
 	int client = GetClientOfUserId(hEvent.GetInt("userid"));
-	
-	if( client > 0 && IsClientConnected(client) && IsClientInGame(client) && GetClientTeam(client) == 3 )
+	if (client > 0) ClearGaugeViews(client);
+	GetConfig();
+}
+
+// 控制槽可在同一连接上复用，出生和死亡也必须抹去旧生命的记录。
+void ClearGaugeViews(int client = 0)
+{
+	for (int viewer = 1; viewer <= MaxClients; viewer++)
 	{
-		TimerSpawn(INVALID_HANDLE, client);
-		CreateTimer(0.5, TimerSpawn, client, TIMER_FLAG_NO_MAPCHANGE);
+		if (!client || viewer == client || g_LastGauge[viewer].target == client) g_LastGauge[viewer].target = 0;
 	}
+}
+
+public void OnClientDisconnect(int client)
+{
+	ClearGaugeViews(client);
 }
 
 //地图结束.
 public void OnMapEnd()
 {
+	ClearGaugeViews();
 	TankkillFinaleVehicleLeaving = false;
 }
 
 //回合结束.
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
+	ClearGaugeViews();
 	TankkillFinaleVehicleLeaving = false;
 }
 
@@ -220,9 +231,10 @@ public void Event_FinaleVehicleLeaving(Event event, const char[] name, bool dont
 
 public void OnInfectedDeath(Event hEvent, const char[] sName, bool bDontBroadcast)
 {
+	int client = GetClientOfUserId(hEvent.GetInt("userid"));
+	if (client > 0) ClearGaugeViews(client);
 	if ( !hPluginEnable.BoolValue ) return;
 
-	int client = GetClientOfUserId(hEvent.GetInt("userid"));
 	int attacker = GetClientOfUserId(hEvent.GetInt("attacker"));
 	
 	if( client > 0 && IsClientConnected(client) && IsClientInGame(client) && GetClientTeam(client) == 3 )
@@ -231,9 +243,6 @@ public void OnInfectedDeath(Event hEvent, const char[] sName, bool bDontBroadcas
 		FormatEx(clName1, sizeof(clName1), "%N", client);
 		SplitString(clName1, "Tank", clName1, sizeof(clName1));
 
-		prevMAX[client] = -1;
-		prevHP[client] = -1;
-		
 		int HLZClass = GetEntProp(client, Prop_Send, "m_zombieClass");
 		if (HLZClass == 8 && nShowTank)
 		{
@@ -256,6 +265,7 @@ public void OnInfectedDeath(Event hEvent, const char[] sName, bool bDontBroadcas
 							}
 							if(GetConVarInt(hPluginTank) == 2 || GetConVarInt(hPluginTank) == 3)
 							{
+								if (nShowType) g_LastGauge[i].target = 0;
 								PrintHintText(i, "[提示]感染者 坦克%s 突然失去了梦想,自杀身亡.", clName1);//屏幕中下提示.
 							}
 						}
@@ -268,6 +278,7 @@ public void OnInfectedDeath(Event hEvent, const char[] sName, bool bDontBroadcas
 				{
 					if(IsClientConnected(i) && IsClientInGame(i) && !IsFakeClient(i) && GetClientTeam(i) != 3)
 					{
+						if (nShowType) g_LastGauge[i].target = 0;
 						PrintHintText(i, "++ 坦克%s已死亡 ++", clName1);
 					}
 				}
@@ -285,6 +296,7 @@ public void OnPlayerHurt( Event hEvent, const char[] sName, bool bDontBroadcast)
 	
 	int client = GetClientOfUserId(hEvent.GetInt("userid"));
 	if(!client || !IsClientConnected(client) || !IsClientInGame(client) || !IsPlayerAlive(client) || GetClientTeam(client) != 3) return;
+	g_LastGauge[attacker].target = 0;
 
 	char class[128];
 	GetClientModel(client, class, sizeof(class));
@@ -297,28 +309,55 @@ public void OnPlayerHurt( Event hEvent, const char[] sName, bool bDontBroadcast)
 	}
 	
 	if(!match && (!nShowTank || (nShowTank && StrContains(class, "tank", false) == -1 && StrContains(class, "hulk", false) == -1))) return;
+	if (!match && !IsFakeClient(attacker) && IsPlayerAlive(attacker))
+	{
+		g_LastGauge[attacker].viewerSerial = GetClientSerial(attacker);
+		g_LastGauge[attacker].target = client;
+		g_LastGauge[attacker].targetSerial = GetClientSerial(client);
+		g_LastGauge[attacker].targetRef = EntIndexToEntRef(client);
+		g_LastGauge[attacker].channel = nShowType;
+		g_LastGauge[attacker].until = GetGameTime() + GAUGE_RECENT_SECONDS;
+	}
+	ShowPlayerGauge(attacker, client);
+}
 
+void ShowPlayerGauge(int attacker, int client)
+{
 	int maxBAR = hBarLEN.IntValue;
 	int nowHP = GetEntProp(client, Prop_Data, "m_iHealth");
 	int maxHP = GetEntProp(client, Prop_Data, "m_iMaxHealth");
 
-	if(nowHP <= 0 || prevMAX[client] < 0) 	nowHP = 0;
-	
-	if(nowHP && nowHP > prevHP[client]) 	nowHP = prevHP[client];
-	else 									prevHP[client] = nowHP;
-	
-	if(maxHP < prevMAX[client]) 			maxHP = prevMAX[client];
-	
-	if(maxHP < nowHP){
-		maxHP = nowHP;
-		prevMAX[client] = nowHP;
-	}
-	
+	// 每次受伤都读当前实体。回复、缩放及控制者接管后，旧生命的最低血量没有参考价值。
+	if(nowHP < 0) nowHP = 0;
+	if(maxHP < nowHP) maxHP = nowHP;
 	if(maxHP < 1) maxHP = 1;
 
 	char clName[MAX_NAME_LENGTH];
 	GetClientName(client, clName, sizeof(clName));
 	ShowHealthGauge(attacker, maxBAR, maxHP, nowHP, clName);
+}
+
+// Rogue 的可选公开事件。仅在回复真实发生时读取目标，单独安装显血时仍照常按命中显示。
+public void RN_OnTankHealthRestored(int tank)
+{
+	if (hPluginEnable == null || !hPluginEnable.BoolValue || !hTank.BoolValue || tank < 1 || tank > MaxClients ||
+		!IsClientInGame(tank) || !IsPlayerAlive(tank) || GetClientTeam(tank) != 3 || GetEntProp(tank, Prop_Send, "m_zombieClass") != 8) return;
+	int serial = GetClientSerial(tank), ref = EntIndexToEntRef(tank);
+	float now = GetGameTime();
+	for (int viewer = 1; viewer <= MaxClients; viewer++)
+	{
+		if (g_LastGauge[viewer].target != tank) continue;
+		bool valid = g_LastGauge[viewer].targetSerial == serial && g_LastGauge[viewer].targetRef == ref &&
+			now < g_LastGauge[viewer].until && g_LastGauge[viewer].channel == nShowType &&
+			IsClientInGame(viewer) && GetClientSerial(viewer) == g_LastGauge[viewer].viewerSerial &&
+			IsPlayerAlive(viewer) && GetClientTeam(viewer) == 2 && !IsFakeClient(viewer);
+		// 一次真实命中只授权一次主动刷新，下一枪会按新的目标重建记录。
+		g_LastGauge[viewer].target = 0;
+		if (!valid) continue;
+		if (!IsClientInGame(tank) || GetClientSerial(tank) != serial || EntIndexToEntRef(tank) != ref ||
+			!IsPlayerAlive(tank) || GetClientTeam(tank) != 3 || GetEntProp(tank, Prop_Send, "m_isIncapacitated")) break;
+		ShowPlayerGauge(viewer, tank);
+	}
 }
 
 public void OnWitchSpawn( Event hEvent, const char[] sName, bool bDontBroadcast )
@@ -367,6 +406,7 @@ public void OnWitchHurt( Event hEvent, const char[] sName, bool bDontBroadcast )
 		if(witchID[i] == entity)
 		{
 			int damage = GetEventInt(hEvent, "amount");
+			g_LastGauge[attacker].target = 0;
 			int maxBAR = GetConVarInt(hBarLEN);
 			int nowHP = witchHP[i] - damage;
 			int maxHP = witchMAX[i];
